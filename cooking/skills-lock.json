@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "skills": {
+    "prava-pay": {
+      "source": "Prava-Payments/prava-skills",
+      "sourceType": "github",
+      "skillPath": "prava-pay/SKILL.md",
+      "computedHash": "91fce6b414e00c800500355bc3d877745ea11446cdfcd39c63dc7543ccdf45ff"
+    },
+    "prava-sdk-integration": {
+      "source": "Prava-Payments/prava-skills",
+      "sourceType": "github",
+      "skillPath": "prava-sdk-integration/SKILL.md",
+      "computedHash": "f90e9a83cef18257f6256ae26e2d9e42efca8475c7989f482f260b4fa4f84cf1"
+    },
+    "prava-shopping": {
+      "source": "Prava-Payments/prava-skills",
+      "sourceType": "github",
+      "skillPath": "prava-shopping/SKILL.md",
+      "computedHash": "de27b0859874c828f153269617627b20e91fdea6ba69e7b6e8814ba0991e2d61"
+    },
+    "swiggy-prava-skill": {
+      "source": "Prava-Payments/prava-skills",
+      "sourceType": "github",
+      "skillPath": "prava-merchants-checkout/swiggy-prava-skill/SKILL.md",
+      "computedHash": "f96d65b75df61873687c30a73546f57a19cfce514f322e5ec9373adf0a0ca8ca"
+    },
+    "zepto-prava-skill": {
+      "source": "Prava-Payments/prava-skills",
+      "sourceType": "github",
+      "skillPath": "prava-merchants-checkout/zepto-prava-skill/SKILL.md",
+      "computedHash": "9a633009b4df683cc38234da6a53ebfb8b55aef14b984608feba2d21207c590f"
+    }
+  }
+}
