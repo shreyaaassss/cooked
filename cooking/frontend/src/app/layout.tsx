@@ -38,10 +38,22 @@ export default function RootLayout({
             </a>
             <div className="flex items-center gap-4 text-sm">
               <a
+                href="/agent"
+                className="text-orange-600 font-medium hover:text-orange-700 transition-colors"
+              >
+                Pantry Agent
+              </a>
+              <a
+                href="/"
+                className="text-gray-500 hover:text-gray-800 transition-colors"
+              >
+                Recipe Mode
+              </a>
+              <a
                 href="/settings"
                 className="text-gray-500 hover:text-gray-800 transition-colors"
               >
-                Pantry & Settings
+                Settings
               </a>
               <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">
                 Powered by Prava

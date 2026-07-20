@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import FRONTEND_URL
 from backend.models.database import init_db
-from backend.routers import address, checkout, compare, orders, pantry, recipe
+from backend.routers import address, agent, checkout, compare, orders, pantry, recipe
 
 app = FastAPI(
     title="CookCart API",
@@ -23,6 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(agent.router, prefix="/api/agent", tags=["agent"])
 app.include_router(address.router, prefix="/api/address", tags=["address"])
 app.include_router(recipe.router, prefix="/api/recipe", tags=["recipe"])
 app.include_router(pantry.router, prefix="/api/pantry", tags=["pantry"])

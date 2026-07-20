@@ -9,13 +9,16 @@ import {
 } from "@/lib/api";
 
 interface Address {
-  id: string;
+  id?: string;
   addressId?: string;
   name?: string;
   type?: string;
   formattedAddress?: string;
   shortAddress?: string;
   address?: string;
+  addressLine?: string;
+  addressTag?: string;
+  addressCategory?: string;
   [key: string]: unknown;
 }
 
@@ -24,19 +27,21 @@ export default function AddressManager() {
   const [swiggyAddresses, setSwiggyAddresses] = useState<Address[]>([]);
   const [selectedZepto, setSelectedZepto] = useState<string | null>(null);
   const [selectedSwiggy, setSelectedSwiggy] = useState<string | null>(null);
-  const [loading, setLoading] = useState({ zepto: false, swiggy: false });
+  const [loadingZ, setLoadingZ] = useState(true);
+  const [loadingS, setLoadingS] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [addingAddress, setAddingAddress] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const [newAddr, setNewAddr] = useState({
+  const [form, setForm] = useState({
     type: "HOME",
     name: "Home",
     flat_details: "",
     building_name: "",
     landmark: "",
-    latitude: 0,
-    longitude: 0,
+    latitude: "",
+    longitude: "",
     formatted_address: "",
     short_address: "",
     contact_name: "",
@@ -49,73 +54,88 @@ export default function AddressManager() {
 
   async function loadAddresses() {
     setError(null);
-    setLoading({ zepto: true, swiggy: true });
+    setLoadingZ(true);
+    setLoadingS(true);
 
-    // Load both in parallel
-    const [zResult, sResult] = await Promise.allSettled([
-      getZeptoAddresses(),
-      getSwiggyAddresses(),
-    ]);
-
-    if (zResult.status === "fulfilled") {
-      setZeptoAddresses(zResult.value.addresses || []);
-    }
-    if (sResult.status === "fulfilled") {
-      setSwiggyAddresses(sResult.value.addresses || []);
+    try {
+      const z = await getZeptoAddresses();
+      setZeptoAddresses(z.addresses || []);
+    } catch {
+      // Zepto not authenticated yet
+    } finally {
+      setLoadingZ(false);
     }
 
-    if (zResult.status === "rejected" && sResult.status === "rejected") {
-      setError("Could not load addresses from either platform. Make sure you have authenticated with Zepto and Swiggy.");
+    try {
+      const s = await getSwiggyAddresses();
+      setSwiggyAddresses(s.addresses || []);
+    } catch {
+      // Swiggy not authenticated yet
+    } finally {
+      setLoadingS(false);
     }
-
-    setLoading({ zepto: false, swiggy: false });
   }
 
-  async function handleSelectZepto(addressId: string) {
+  async function handleSelectZepto(id: string) {
     try {
-      await selectZeptoAddress(addressId);
-      setSelectedZepto(addressId);
+      await selectZeptoAddress(id);
+      setSelectedZepto(id);
+      setSuccessMsg("Zepto delivery address selected!");
+      setTimeout(() => setSuccessMsg(null), 3000);
     } catch {
       setError("Failed to select Zepto address");
     }
   }
 
-  function handleUseCurrentLocation() {
+  function handleLocate() {
     if (!navigator.geolocation) {
-      setError("Geolocation is not supported by your browser");
+      setError("Geolocation not supported by your browser");
       return;
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setNewAddr((prev) => ({
-          ...prev,
-          latitude: parseFloat(pos.coords.latitude.toFixed(6)),
-          longitude: parseFloat(pos.coords.longitude.toFixed(6)),
+        setForm((f) => ({
+          ...f,
+          latitude: pos.coords.latitude.toFixed(6),
+          longitude: pos.coords.longitude.toFixed(6),
         }));
       },
-      () => setError("Unable to get your location. Please enter coordinates manually.")
+      () => setError("Unable to get location. Please enter coordinates manually.")
     );
   }
 
   async function handleAddAddress(e: React.FormEvent) {
     e.preventDefault();
-    if (!newAddr.flat_details || !newAddr.building_name || !newAddr.latitude || !newAddr.longitude) {
-      setError("Please fill in all required fields including coordinates");
+    if (!form.flat_details || !form.building_name || !form.latitude || !form.longitude) {
+      setError("Please fill all required fields");
       return;
     }
     setAddingAddress(true);
     setError(null);
     try {
       await addZeptoAddress({
-        ...newAddr,
-        formatted_address: newAddr.formatted_address || `${newAddr.flat_details}, ${newAddr.building_name}, ${newAddr.short_address}`,
+        type: form.type,
+        name: form.name,
+        flat_details: form.flat_details,
+        building_name: form.building_name,
+        landmark: form.landmark,
+        latitude: parseFloat(form.latitude),
+        longitude: parseFloat(form.longitude),
+        formatted_address:
+          form.formatted_address ||
+          `${form.flat_details}, ${form.building_name}, ${form.short_address}`,
+        short_address: form.short_address,
+        contact_name: form.contact_name,
+        contact_number: form.contact_number,
       });
       setShowAddForm(false);
-      setNewAddr({
+      setForm({
         type: "HOME", name: "Home", flat_details: "", building_name: "",
-        landmark: "", latitude: 0, longitude: 0, formatted_address: "",
+        landmark: "", latitude: "", longitude: "", formatted_address: "",
         short_address: "", contact_name: "", contact_number: "",
       });
+      setSuccessMsg("Address saved successfully!");
+      setTimeout(() => setSuccessMsg(null), 3000);
       await loadAddresses();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add address");
@@ -124,306 +144,281 @@ export default function AddressManager() {
     }
   }
 
-  function getDisplayAddress(addr: Address): string {
-    return addr.formattedAddress || addr.shortAddress || addr.address || addr.name || addr.id;
-  }
-
-  function getAddressLabel(addr: Address): string {
-    return addr.type || addr.name || "Address";
-  }
-
   return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-md p-6">
       <h3 className="text-lg font-bold text-gray-800 mb-1">
         Delivery Addresses
       </h3>
       <p className="text-sm text-gray-400 mb-4">
-        Select your delivery address for Zepto and Swiggy. Both platforms need an address to search products.
+        Select or add delivery addresses. Both platforms need an address to
+        search and deliver products.
       </p>
 
+      {/* Alerts */}
       {error && (
-        <div className="mb-4 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+        <div className="mb-4 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 flex justify-between">
           {error}
-          <button onClick={() => setError(null)} className="ml-2 text-red-400 hover:text-red-600">&times;</button>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 font-bold ml-2">&times;</button>
+        </div>
+      )}
+      {successMsg && (
+        <div className="mb-4 px-4 py-2.5 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">
+          {successMsg}
         </div>
       )}
 
-      {/* Zepto Addresses */}
-      <div className="mb-6">
+      {/* ── Zepto ── */}
+      <section className="mb-6">
         <div className="flex items-center justify-between mb-3">
           <h4 className="font-semibold text-gray-700 flex items-center gap-2">
-            <span className="w-2 h-2 bg-purple-500 rounded-full" />
-            Zepto
+            <span className="w-2.5 h-2.5 bg-purple-500 rounded-full" />
+            Zepto Addresses
           </h4>
           <button
             onClick={() => setShowAddForm(!showAddForm)}
-            className="text-xs px-3 py-1 bg-purple-50 text-purple-600 rounded-full
-                       hover:bg-purple-100 transition-colors font-medium"
+            className="text-xs px-3 py-1.5 bg-purple-50 text-purple-600 rounded-lg
+                       hover:bg-purple-100 transition-colors font-medium border border-purple-200"
           >
-            {showAddForm ? "Cancel" : "+ Add Address"}
+            {showAddForm ? "Cancel" : "+ Add New"}
           </button>
         </div>
 
-        {loading.zepto ? (
-          <p className="text-sm text-gray-400">Loading Zepto addresses...</p>
+        {loadingZ ? (
+          <p className="text-sm text-gray-400 py-3">Loading...</p>
         ) : zeptoAddresses.length === 0 ? (
-          <p className="text-sm text-gray-400">
-            No saved addresses. Add one to start ordering from Zepto.
-          </p>
+          <div className="text-sm text-gray-400 bg-gray-50 rounded-xl p-4 text-center">
+            No saved Zepto addresses. Click &quot;+ Add New&quot; above to add one.
+          </div>
         ) : (
           <div className="space-y-2">
             {zeptoAddresses.map((addr) => {
-              const id = addr.id || addr.addressId || "";
-              const isSelected = selectedZepto === id;
+              const id = (addr.id || addr.addressId || "") as string;
+              const selected = selectedZepto === id;
               return (
-                <button
+                <div
                   key={id}
                   onClick={() => handleSelectZepto(id)}
-                  className={`w-full text-left px-4 py-3 rounded-xl border transition-all ${
-                    isSelected
-                      ? "border-purple-400 bg-purple-50 ring-1 ring-purple-200"
-                      : "border-gray-200 hover:border-purple-200 hover:bg-gray-50"
+                  className={`cursor-pointer p-4 rounded-xl border-2 transition-all ${
+                    selected
+                      ? "border-purple-500 bg-purple-50"
+                      : "border-gray-200 hover:border-purple-300 hover:bg-gray-50"
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-medium text-purple-600 uppercase tracking-wide">
-                        {getAddressLabel(addr)}
-                      </span>
-                      <p className="text-sm text-gray-700 mt-0.5">
-                        {getDisplayAddress(addr)}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-bold text-purple-600 uppercase">
+                          {(addr.type as string) || (addr.name as string) || "Address"}
+                        </span>
+                        {selected && (
+                          <span className="text-[10px] bg-purple-500 text-white px-2 py-0.5 rounded-full">
+                            SELECTED
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-800 leading-snug">
+                        {(addr.formattedAddress as string) ||
+                          (addr.shortAddress as string) ||
+                          (addr.name as string) ||
+                          id}
                       </p>
                     </div>
-                    {isSelected && (
-                      <span className="text-xs bg-purple-500 text-white px-2 py-0.5 rounded-full">
-                        Selected
-                      </span>
-                    )}
+                    <div className={`w-5 h-5 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center ${
+                      selected ? "border-purple-500 bg-purple-500" : "border-gray-300"
+                    }`}>
+                      {selected && (
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
         )}
 
-        {/* Add Address Form */}
+        {/* Add address form */}
         {showAddForm && (
-          <form onSubmit={handleAddAddress} className="mt-4 p-4 bg-gray-50 rounded-xl space-y-3">
+          <form onSubmit={handleAddAddress} className="mt-4 p-5 bg-gray-50 rounded-xl border border-gray-200 space-y-4">
+            <h5 className="font-semibold text-gray-700 text-sm">Add New Zepto Address</h5>
+
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Type</label>
-                <select
-                  value={newAddr.type}
-                  onChange={(e) => setNewAddr({ ...newAddr, type: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-300"
-                >
+              <Field label="Type">
+                <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-400 bg-white">
                   <option value="HOME">Home</option>
                   <option value="WORK">Work</option>
                   <option value="OTHER">Other</option>
                 </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Label</label>
-                <input
-                  type="text"
-                  value={newAddr.name}
-                  onChange={(e) => setNewAddr({ ...newAddr, name: e.target.value })}
-                  placeholder="My Home"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-300"
-                />
-              </div>
+              </Field>
+              <Field label="Label">
+                <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="My Home" className="input-field" />
+              </Field>
             </div>
 
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Flat / House No. *</label>
-              <input
-                type="text"
-                value={newAddr.flat_details}
-                onChange={(e) => setNewAddr({ ...newAddr, flat_details: e.target.value })}
-                placeholder="A-101"
-                required
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-300"
-              />
-            </div>
+            <Field label="Flat / House No. *">
+              <input type="text" value={form.flat_details} onChange={(e) => setForm({ ...form, flat_details: e.target.value })}
+                placeholder="A-101, 3rd Floor" required className="input-field" />
+            </Field>
 
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Building / Society Name *</label>
-              <input
-                type="text"
-                value={newAddr.building_name}
-                onChange={(e) => setNewAddr({ ...newAddr, building_name: e.target.value })}
-                placeholder="Sunrise Apartments"
-                required
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-300"
-              />
-            </div>
+            <Field label="Building / Society *">
+              <input type="text" value={form.building_name} onChange={(e) => setForm({ ...form, building_name: e.target.value })}
+                placeholder="Sunrise Apartments" required className="input-field" />
+            </Field>
 
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Landmark</label>
-              <input
-                type="text"
-                value={newAddr.landmark}
-                onChange={(e) => setNewAddr({ ...newAddr, landmark: e.target.value })}
-                placeholder="Near City Mall"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-300"
-              />
-            </div>
+            <Field label="Landmark (optional)">
+              <input type="text" value={form.landmark} onChange={(e) => setForm({ ...form, landmark: e.target.value })}
+                placeholder="Near City Mall" className="input-field" />
+            </Field>
 
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Area / City *</label>
-              <input
-                type="text"
-                value={newAddr.short_address}
-                onChange={(e) => setNewAddr({ ...newAddr, short_address: e.target.value })}
-                placeholder="Kothrud, Pune"
-                required
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-300"
-              />
-            </div>
+            <Field label="Area / City *">
+              <input type="text" value={form.short_address} onChange={(e) => setForm({ ...form, short_address: e.target.value })}
+                placeholder="Kothrud, Pune" required className="input-field" />
+            </Field>
 
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Full Address</label>
-              <input
-                type="text"
-                value={newAddr.formatted_address}
-                onChange={(e) => setNewAddr({ ...newAddr, formatted_address: e.target.value })}
-                placeholder="A-101, Sunrise Apartments, Kothrud, Pune 411038"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-300"
-              />
-            </div>
+            <Field label="Full Address (auto-filled if left blank)">
+              <input type="text" value={form.formatted_address} onChange={(e) => setForm({ ...form, formatted_address: e.target.value })}
+                placeholder="A-101, Sunrise Apartments, Kothrud, Pune 411038" className="input-field" />
+            </Field>
 
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Latitude *</label>
-                <input
-                  type="number"
-                  step="any"
-                  value={newAddr.latitude || ""}
-                  onChange={(e) => setNewAddr({ ...newAddr, latitude: parseFloat(e.target.value) || 0 })}
-                  placeholder="18.5089"
-                  required
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-300"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Longitude *</label>
-                <input
-                  type="number"
-                  step="any"
-                  value={newAddr.longitude || ""}
-                  onChange={(e) => setNewAddr({ ...newAddr, longitude: parseFloat(e.target.value) || 0 })}
-                  placeholder="73.9260"
-                  required
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-300"
-                />
-              </div>
+              <Field label="Latitude *">
+                <input type="text" value={form.latitude} onChange={(e) => setForm({ ...form, latitude: e.target.value })}
+                  placeholder="18.5089" required className="input-field" />
+              </Field>
+              <Field label="Longitude *">
+                <input type="text" value={form.longitude} onChange={(e) => setForm({ ...form, longitude: e.target.value })}
+                  placeholder="73.9260" required className="input-field" />
+              </Field>
             </div>
 
-            <button
-              type="button"
-              onClick={handleUseCurrentLocation}
-              className="w-full text-sm text-purple-600 hover:text-purple-700 py-2
-                         border border-dashed border-purple-200 rounded-lg
-                         hover:bg-purple-50 transition-colors"
-            >
+            <button type="button" onClick={handleLocate}
+              className="w-full text-sm text-purple-600 hover:text-purple-700 py-2.5
+                         border border-dashed border-purple-300 rounded-xl
+                         hover:bg-purple-50 transition-colors font-medium">
               Use my current location
             </button>
 
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Contact Name</label>
-                <input
-                  type="text"
-                  value={newAddr.contact_name}
-                  onChange={(e) => setNewAddr({ ...newAddr, contact_name: e.target.value })}
-                  placeholder="John Doe"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-300"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Contact Number</label>
-                <input
-                  type="text"
-                  value={newAddr.contact_number}
-                  onChange={(e) => setNewAddr({ ...newAddr, contact_number: e.target.value })}
-                  placeholder="+91 9876543210"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-purple-300"
-                />
-              </div>
+              <Field label="Contact Name">
+                <input type="text" value={form.contact_name} onChange={(e) => setForm({ ...form, contact_name: e.target.value })}
+                  placeholder="Shreyas" className="input-field" />
+              </Field>
+              <Field label="Phone Number">
+                <input type="text" value={form.contact_number} onChange={(e) => setForm({ ...form, contact_number: e.target.value })}
+                  placeholder="+91 9876543210" className="input-field" />
+              </Field>
             </div>
 
-            <button
-              type="submit"
-              disabled={addingAddress}
-              className="w-full px-4 py-2.5 bg-purple-500 text-white text-sm font-medium
-                         rounded-lg hover:bg-purple-600 transition-colors disabled:opacity-50"
-            >
+            <button type="submit" disabled={addingAddress}
+              className="w-full px-4 py-3 bg-purple-500 text-white text-sm font-semibold
+                         rounded-xl hover:bg-purple-600 transition-colors disabled:opacity-50">
               {addingAddress ? "Saving..." : "Save Address"}
             </button>
           </form>
         )}
-      </div>
+      </section>
 
-      {/* Swiggy Addresses */}
-      <div>
+      {/* ── Swiggy ── */}
+      <section>
         <h4 className="font-semibold text-gray-700 flex items-center gap-2 mb-3">
-          <span className="w-2 h-2 bg-orange-500 rounded-full" />
-          Swiggy Instamart
+          <span className="w-2.5 h-2.5 bg-orange-500 rounded-full" />
+          Swiggy Instamart Addresses
         </h4>
+        <p className="text-xs text-gray-400 mb-3">
+          Swiggy addresses are synced from your Swiggy account. Manage them in the Swiggy app.
+        </p>
 
-        {loading.swiggy ? (
-          <p className="text-sm text-gray-400">Loading Swiggy addresses...</p>
+        {loadingS ? (
+          <p className="text-sm text-gray-400 py-3">Loading...</p>
         ) : swiggyAddresses.length === 0 ? (
-          <p className="text-sm text-gray-400">
-            No saved addresses. Add addresses in the Swiggy app first.
-          </p>
+          <div className="text-sm text-gray-400 bg-gray-50 rounded-xl p-4 text-center">
+            No Swiggy addresses found. Add addresses in the Swiggy app.
+          </div>
         ) : (
           <div className="space-y-2">
             {swiggyAddresses.map((addr, idx) => {
-              const id = addr.id || addr.addressId || String(idx);
-              const isSelected = selectedSwiggy === id;
+              const id = (addr.id || addr.addressId || String(idx)) as string;
+              const selected = selectedSwiggy === id;
+              const tag = (addr.addressTag || addr.addressCategory || addr.type || "") as string;
+              const line = (addr.addressLine || addr.formattedAddress || addr.address || "") as string;
               return (
-                <button
+                <div
                   key={id}
                   onClick={() => setSelectedSwiggy(id)}
-                  className={`w-full text-left px-4 py-3 rounded-xl border transition-all ${
-                    isSelected
-                      ? "border-orange-400 bg-orange-50 ring-1 ring-orange-200"
-                      : "border-gray-200 hover:border-orange-200 hover:bg-gray-50"
+                  className={`cursor-pointer p-4 rounded-xl border-2 transition-all ${
+                    selected
+                      ? "border-orange-500 bg-orange-50"
+                      : "border-gray-200 hover:border-orange-300 hover:bg-gray-50"
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-medium text-orange-600 uppercase tracking-wide">
-                        {getAddressLabel(addr)}
-                      </span>
-                      <p className="text-sm text-gray-700 mt-0.5">
-                        {getDisplayAddress(addr)}
-                      </p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        {tag && (
+                          <span className="text-xs font-bold text-orange-600 uppercase">
+                            {tag}
+                          </span>
+                        )}
+                        {selected && (
+                          <span className="text-[10px] bg-orange-500 text-white px-2 py-0.5 rounded-full">
+                            SELECTED
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-800 leading-snug">{line}</p>
                     </div>
-                    {isSelected && (
-                      <span className="text-xs bg-orange-500 text-white px-2 py-0.5 rounded-full">
-                        Selected
-                      </span>
-                    )}
+                    <div className={`w-5 h-5 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center ${
+                      selected ? "border-orange-500 bg-orange-500" : "border-gray-300"
+                    }`}>
+                      {selected && (
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
         )}
-      </div>
+      </section>
 
-      {/* Refresh button */}
-      <div className="mt-4 pt-4 border-t border-gray-100">
-        <button
-          onClick={loadAddresses}
-          disabled={loading.zepto || loading.swiggy}
-          className="text-sm text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-50"
-        >
-          Refresh addresses
+      {/* Refresh */}
+      <div className="mt-5 pt-4 border-t border-gray-100 text-center">
+        <button onClick={loadAddresses} disabled={loadingZ || loadingS}
+          className="text-sm text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-50 font-medium">
+          Refresh Addresses
         </button>
       </div>
+
+      <style jsx>{`
+        .input-field {
+          width: 100%;
+          padding: 0.5rem 0.75rem;
+          border: 1px solid #e5e7eb;
+          border-radius: 0.5rem;
+          font-size: 0.875rem;
+          outline: none;
+          transition: border-color 0.15s;
+        }
+        .input-field:focus {
+          border-color: #a78bfa;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+      {children}
     </div>
   );
 }
