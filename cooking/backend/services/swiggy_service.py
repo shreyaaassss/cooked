@@ -49,21 +49,18 @@ class SwiggyInstamartService:
             address_id = "86719714"
 
         result = self._run_mcp("search_products", {"query": query, "addressId": address_id})
-        raw_products = []
-        if isinstance(result, dict):
-            raw_products = result.get("products", result.get("items", []))
-        elif isinstance(result, list):
-            raw_products = result
+        raw_products = self._extract_products(result)
 
         flat_skus = []
         for prod in raw_products:
             variations = prod.get("variations", [])
             for var in variations:
+                price_obj = var.get("price", {})
                 flat_skus.append({
                     "id": var.get("skuId"),
                     "productId": var.get("skuId"),
                     "name": f"{prod.get('displayName', '')} - {var.get('displayName', '')}",
-                    "price": float(var.get("price", {}).get("offerPrice", var.get("price", {}).get("mrp", 0))),
+                    "price": float(price_obj.get("offerPrice", price_obj.get("mrp", 0))),
                     "packSize": var.get("quantityDescription"),
                 })
         return flat_skus
@@ -86,31 +83,48 @@ class SwiggyInstamartService:
             {"name": "search_products", "arguments": {"query": q, "addressId": address_id}}
             for q in queries
         ]
-        batch_results = self._run_batch(calls)
+        batch_raw = self._run_batch(calls)
+
+        # Runner returns single result directly for 1 call, or list for multiple
+        if isinstance(batch_raw, list):
+            batch_results = batch_raw
+        else:
+            # Single call returned unwrapped — wrap it to match expected format
+            batch_results = [{"name": "search_products", "result": batch_raw}]
 
         # Map results back to query names
         results: dict[str, list[dict]] = {}
         for query, item in zip(queries, batch_results):
             raw = item.get("result", item) if isinstance(item, dict) else item
-            raw_products = []
-            if isinstance(raw, dict):
-                raw_products = raw.get("products", raw.get("items", []))
-            elif isinstance(raw, list):
-                raw_products = raw
+            raw_products = self._extract_products(raw)
 
             flat_skus = []
             for prod in raw_products:
                 variations = prod.get("variations", [])
                 for var in variations:
+                    price_obj = var.get("price", {})
                     flat_skus.append({
                         "id": var.get("skuId"),
                         "productId": var.get("skuId"),
                         "name": f"{prod.get('displayName', '')} - {var.get('displayName', '')}",
-                        "price": float(var.get("price", {}).get("offerPrice", var.get("price", {}).get("mrp", 0))),
+                        "price": float(price_obj.get("offerPrice", price_obj.get("mrp", 0))),
                         "packSize": var.get("quantityDescription"),
                     })
             results[query] = flat_skus
         return results
+
+    @staticmethod
+    def _extract_products(raw) -> list:
+        """Extract products list from various Swiggy response shapes."""
+        if isinstance(raw, list):
+            return raw
+        if not isinstance(raw, dict):
+            return []
+        # {"success": true, "data": {"products": [...]}}
+        if "data" in raw and isinstance(raw["data"], dict):
+            return raw["data"].get("products", raw["data"].get("items", []))
+        # {"products": [...]}
+        return raw.get("products", raw.get("items", []))
 
     async def get_addresses(self) -> list[dict]:
         """Get saved delivery addresses."""
@@ -171,7 +185,7 @@ class SwiggyInstamartService:
         """Execute a single Swiggy MCP tool via the runner script."""
         cmd = self._build_cmd(["--compact", tool_name, json.dumps(args)])
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60
+            cmd, capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace"
         )
         if result.returncode != 0:
             raise RuntimeError(f"Swiggy MCP error: {result.stderr}")
@@ -182,7 +196,7 @@ class SwiggyInstamartService:
         batch_json = json.dumps(calls)
         cmd = self._build_cmd(["--compact", "--batch-json", batch_json])
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120
+            cmd, capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace"
         )
         if result.returncode != 0:
             raise RuntimeError(f"Swiggy MCP batch error: {result.stderr}")

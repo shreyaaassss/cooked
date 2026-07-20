@@ -1,23 +1,17 @@
 #!/usr/bin/env node
 
 /**
- * swiggy-mcp-runner.mjs
+ * zepto-mcp-runner.mjs
  *
- * Equivalent of zepto-mcp-runner.mjs for Swiggy Instamart.
- * Spawns a single mcp-remote process, initializes the MCP handshake,
- * then runs one or more tool calls sequentially over that connection.
+ * Spawns a single mcp-remote process connected to Zepto's MCP endpoint,
+ * initializes the MCP handshake, then runs one or more tool calls
+ * sequentially over that connection.
  *
  * Usage:
- *   node swiggy-mcp-runner.mjs [--compact] <tool-name> [json-args]
- *   node swiggy-mcp-runner.mjs --list-tools
- *   node swiggy-mcp-runner.mjs [--compact] --batch-json '<json-array>'
- *   node swiggy-mcp-runner.mjs [--compact] --batch <json-file|->
- *   node swiggy-mcp-runner.mjs --endpoint <url> [--compact] <tool-name> [json-args]
- *
- * Supported Swiggy endpoints:
- *   instamart  https://mcp.swiggy.com/im      (default)
- *   food       https://mcp.swiggy.com/food
- *   dineout    https://mcp.swiggy.com/dineout
+ *   node zepto-mcp-runner.mjs [--compact] <tool-name> [json-args]
+ *   node zepto-mcp-runner.mjs --list-tools
+ *   node zepto-mcp-runner.mjs [--compact] --batch-json '<json-array>'
+ *   node zepto-mcp-runner.mjs [--compact] --batch <json-file|->
  */
 
 import { spawn } from "node:child_process";
@@ -26,33 +20,26 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
-const ENDPOINTS = {
-  instamart: "https://mcp.swiggy.com/im",
-  food: "https://mcp.swiggy.com/food",
-  dineout: "https://mcp.swiggy.com/dineout",
-};
-
-const DEFAULT_ENDPOINT = ENDPOINTS.instamart;
+const DEFAULT_ENDPOINT = "https://mcp.zepto.co.in/mcp";
 
 function usage() {
   console.error(`Usage:
-  swiggy-mcp-runner.mjs [--compact] [--endpoint <url|instamart|food|dineout>] <tool-name> [json-args]
-  swiggy-mcp-runner.mjs --list-tools [--endpoint <url|name>]
-  swiggy-mcp-runner.mjs [--compact] --batch <json-file|->
-  swiggy-mcp-runner.mjs [--compact] --batch-json '<json-array>'
+  zepto-mcp-runner.mjs [--compact] <tool-name> [json-args]
+  zepto-mcp-runner.mjs --list-tools
+  zepto-mcp-runner.mjs [--compact] --batch <json-file|->
+  zepto-mcp-runner.mjs [--compact] --batch-json '<json-array>'
 
 Batch JSON shape:
   [
-    {"name":"get_addresses","arguments":{}},
-    {"name":"search_products","arguments":{"query":"chicken"}}
+    {"name":"list_saved_addresses","arguments":{}},
+    {"name":"search_products","arguments":{"query":"chicken","pageNumber":0}}
   ]
 
 --compact  removes image URLs and trims verbose output for faster agent parsing.
---endpoint choose which Swiggy MCP to connect to (default: instamart).
 `);
 }
 
-// ── npx discovery (same logic as zepto-mcp-runner) ──
+// ── npx discovery ──
 
 function isExecutable(path) {
   try {
@@ -138,7 +125,7 @@ function compactValue(value, toolName) {
   }
   if (!value || typeof value !== "object") return value;
 
-  const productLimit = compactLimit("SWIGGY_COMPACT_PRODUCT_LIMIT", 6);
+  const productLimit = compactLimit("ZEPTO_COMPACT_PRODUCT_LIMIT", 6);
   const output = {};
   for (const [key, child] of Object.entries(value)) {
     // Strip image fields
@@ -203,7 +190,7 @@ function parseBatchJson(text, source) {
 
 class McpClient {
   constructor(endpoint) {
-    const npx = resolveExecutable("npx", "SWIGGY_NPX_PATH");
+    const npx = resolveExecutable("npx", "ZEPTO_NPX_PATH");
     const npxBin = dirname(npx);
     this.child = spawn("npx", ["--yes", "mcp-remote", endpoint], {
       stdio: ["pipe", "pipe", "pipe"],
@@ -295,7 +282,7 @@ class McpClient {
     await this.request("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "cookcart-swiggy-runner", version: "0.1.0" },
+      clientInfo: { name: "cookcart-zepto-runner", version: "0.1.0" },
     });
     this.notify("notifications/initialized", {});
   }
@@ -328,21 +315,8 @@ class McpClient {
 async function main() {
   const rawArgs = process.argv.slice(2);
 
-  // Extract --endpoint flag
-  let endpoint = DEFAULT_ENDPOINT;
-  const filteredArgs = [];
-  for (let i = 0; i < rawArgs.length; i++) {
-    if (rawArgs[i] === "--endpoint" && i + 1 < rawArgs.length) {
-      const val = rawArgs[i + 1];
-      endpoint = ENDPOINTS[val] || val; // allow alias or raw URL
-      i++; // skip next
-    } else {
-      filteredArgs.push(rawArgs[i]);
-    }
-  }
-
-  const compact = filteredArgs.includes("--compact");
-  const positional = filteredArgs.filter((arg) => arg !== "--compact");
+  const compact = rawArgs.includes("--compact");
+  const positional = rawArgs.filter((arg) => arg !== "--compact");
   const [first, second] = positional;
 
   if (!first) {
@@ -373,7 +347,7 @@ async function main() {
     calls = [{ name: first, arguments: second ? JSON.parse(second) : {} }];
   }
 
-  const client = new McpClient(endpoint);
+  const client = new McpClient(DEFAULT_ENDPOINT);
   try {
     await client.init();
     if (listTools) {

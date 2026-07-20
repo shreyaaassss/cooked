@@ -12,6 +12,47 @@ async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+// ===== Address =====
+export async function getZeptoAddresses() {
+  return fetchAPI<{ platform: string; addresses: any[] }>("/api/address/zepto");
+}
+
+export async function selectZeptoAddress(addressId: string) {
+  return fetchAPI<{ platform: string; selected: string; result: any }>(
+    `/api/address/zepto/select?address_id=${addressId}`,
+    { method: "POST" }
+  );
+}
+
+export async function addZeptoAddress(data: {
+  type: string;
+  name: string;
+  flat_details: string;
+  building_name: string;
+  landmark?: string;
+  latitude: number;
+  longitude: number;
+  formatted_address: string;
+  short_address: string;
+  contact_name?: string;
+  contact_number?: string;
+}) {
+  return fetchAPI("/api/address/zepto/add", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function checkZeptoServiceability(lat: number, lng: number) {
+  return fetchAPI(
+    `/api/address/zepto/serviceability?latitude=${lat}&longitude=${lng}`
+  );
+}
+
+export async function getSwiggyAddresses() {
+  return fetchAPI<{ platform: string; addresses: any[] }>("/api/address/swiggy");
+}
+
 // ===== Recipe =====
 export async function decomposeRecipe(dish: string, servings: number) {
   return fetchAPI<{

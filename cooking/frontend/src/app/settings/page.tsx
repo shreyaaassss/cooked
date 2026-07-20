@@ -1,5 +1,6 @@
 "use client";
 
+import AddressManager from "@/components/AddressManager";
 import PantryManager from "@/components/PantryManager";
 
 export default function SettingsPage() {
@@ -8,9 +9,11 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-3xl font-bold text-gray-800 mb-1">Settings</h1>
         <p className="text-gray-500">
-          Manage your pantry staples and spend preferences.
+          Manage your delivery addresses, pantry staples, and spend preferences.
         </p>
       </div>
+
+      <AddressManager />
 
       <PantryManager />
 
