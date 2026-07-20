@@ -94,6 +94,32 @@ export default function AgentPage() {
     }
   }
 
+  function addItemsToList(items: Array<{ name: string; quantity: number; unit: string }>) {
+    try {
+      const raw = localStorage.getItem("cookcart_list");
+      const existing: any[] = raw ? JSON.parse(raw) : [];
+      const newItems = items
+        .filter((item) => !existing.some((e: any) => e.name.toLowerCase() === item.name.toLowerCase()))
+        .map((item) => ({
+          id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          name: item.name.charAt(0).toUpperCase() + item.name.slice(1),
+          quantity: item.quantity,
+          unit: item.unit,
+          category: "Other",
+          checked: false,
+        }));
+      localStorage.setItem("cookcart_list", JSON.stringify([...existing, ...newItems]));
+      const added = newItems.length;
+      const skipped = items.length - added;
+      const parts = [];
+      if (added > 0) parts.push(`${added} item${added > 1 ? "s" : ""} added to your list`);
+      if (skipped > 0) parts.push(`${skipped} already in list`);
+      alert(parts.join(". ") + ". Go to My List to review.");
+    } catch {
+      alert("Failed to save to list");
+    }
+  }
+
   return (
     <div className="flex flex-col h-[calc(100vh-80px)]">
       {/* Header */}
@@ -155,19 +181,28 @@ export default function AgentPage() {
               </div>
             </div>
 
-            {/* Extracted items tags */}
+            {/* Extracted items tags + Add to List */}
             {msg.role === "assistant" && msg.items && msg.items.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5 pl-2">
-                {msg.items.map((item, j) => (
-                  <span
-                    key={j}
-                    className="px-2.5 py-1 bg-orange-50 text-orange-700 text-xs
-                               rounded-full border border-orange-200 font-medium"
-                  >
-                    {item.name} — {item.quantity}
-                    {item.unit}
-                  </span>
-                ))}
+              <div className="mt-2 pl-2">
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {msg.items.map((item, j) => (
+                    <span
+                      key={j}
+                      className="px-2.5 py-1 bg-orange-50 text-orange-700 text-xs
+                                 rounded-full border border-orange-200 font-medium"
+                    >
+                      {item.name} — {item.quantity}
+                      {item.unit}
+                    </span>
+                  ))}
+                </div>
+                <button
+                  onClick={() => addItemsToList(msg.items!)}
+                  className="text-xs text-orange-600 hover:text-orange-700 font-medium
+                             hover:underline transition-colors"
+                >
+                  + Add to My List
+                </button>
               </div>
             )}
 

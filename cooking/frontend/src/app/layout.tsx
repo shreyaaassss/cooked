@@ -36,28 +36,19 @@ export default function RootLayout({
               <span className="text-2xl">🛒</span>
               <span className="text-xl font-bold text-gray-800">CookCart</span>
             </a>
-            <div className="flex items-center gap-4 text-sm">
-              <a
-                href="/agent"
-                className="text-orange-600 font-medium hover:text-orange-700 transition-colors"
-              >
-                Pantry Agent
+            <div className="flex items-center gap-1 text-sm">
+              <a href="/agent" className="px-3 py-1.5 rounded-lg text-gray-600 hover:bg-orange-50 hover:text-orange-600 transition-colors font-medium">
+                Agent
               </a>
-              <a
-                href="/"
-                className="text-gray-500 hover:text-gray-800 transition-colors"
-              >
-                Recipe Mode
+              <a href="/list" className="px-3 py-1.5 rounded-lg text-gray-600 hover:bg-orange-50 hover:text-orange-600 transition-colors font-medium">
+                My List
               </a>
-              <a
-                href="/settings"
-                className="text-gray-500 hover:text-gray-800 transition-colors"
-              >
+              <a href="/" className="px-3 py-1.5 rounded-lg text-gray-600 hover:bg-orange-50 hover:text-orange-600 transition-colors font-medium">
+                Recipes
+              </a>
+              <a href="/settings" className="px-3 py-1.5 rounded-lg text-gray-600 hover:bg-orange-50 hover:text-orange-600 transition-colors font-medium">
                 Settings
               </a>
-              <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">
-                Powered by Prava
-              </span>
             </div>
           </div>
         </nav>
