@@ -12,6 +12,30 @@ async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+// ===== Agent =====
+export async function agentChat(
+  messages: Array<{ role: string; content: string }>
+) {
+  return fetchAPI<{
+    intent: string;
+    message: string;
+    items: Array<{ name: string; quantity: number; unit: string }>;
+    comparison: {
+      buy_list: Array<Record<string, unknown>>;
+      skipped: Array<Record<string, unknown>>;
+      zepto_items: Array<Record<string, unknown>>;
+      swiggy_items: Array<Record<string, unknown>>;
+      recommended: Record<string, unknown>;
+      alternatives: Array<Record<string, unknown>>;
+      reasoning: string;
+      errors?: string[];
+    } | null;
+  }>("/api/agent/chat", {
+    method: "POST",
+    body: JSON.stringify({ messages }),
+  });
+}
+
 // ===== Address =====
 export async function getZeptoAddresses() {
   return fetchAPI<{ platform: string; addresses: any[] }>("/api/address/zepto");
