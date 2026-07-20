@@ -135,17 +135,33 @@ class SKUResolver:
             return f"Exact match: {sku_name} covers {needed}{unit}"
         return (
             f"Need {needed}{unit}, buying {pack_size} "
-            f"({best['getting']} total) — {best['waste']:.0f}{unit} extra"
+            f"({best['total_qty']:.0f}{unit} total) — {best['waste']:.0f}{unit} extra"
         )
 
     def _parse_quantity(self, pack_size) -> float | None:
-        """Extract numeric quantity from pack size string like '500g' or '200ml'."""
-        match = re.search(r"(\d+(?:\.\d+)?)", str(pack_size))
+        """Extract numeric quantity from pack size string like '500g', '200ml', or '1 pack (200 g)'."""
+        s = str(pack_size)
+        # Try "X g/ml/kg/l" pattern inside parentheses first: "1 pack (200 g)"
+        paren = re.search(r"\((\d+(?:\.\d+)?)\s*(g|ml|kg|l|gm)\)", s, re.IGNORECASE)
+        if paren:
+            return float(paren.group(1))
+        # Try "200g" / "500 ml" / "1.5 kg" patterns
+        match = re.search(r"(\d+(?:\.\d+)?)\s*(?:g|ml|kg|l|gm)\b", s, re.IGNORECASE)
+        if match:
+            return float(match.group(1))
+        # Fallback: first number
+        match = re.search(r"(\d+(?:\.\d+)?)", s)
         return float(match.group(1)) if match else None
 
     def _parse_unit(self, pack_size: str) -> str:
         """Extract unit from pack size string."""
-        match = re.search(r"\d+(?:\.\d+)?\s*([a-zA-Z]+)", str(pack_size))
+        s = str(pack_size)
+        # Try unit inside parentheses first: "1 pack (200 g)"
+        paren = re.search(r"\(\d+(?:\.\d+)?\s*([a-zA-Z]+)\)", s)
+        if paren:
+            return paren.group(1).lower()
+        # Try "200g" / "500 ml" pattern
+        match = re.search(r"\d+(?:\.\d+)?\s*([a-zA-Z]+)", s)
         return match.group(1).lower() if match else ""
 
     def _normalize_unit(

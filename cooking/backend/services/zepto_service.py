@@ -3,13 +3,12 @@ import subprocess
 import os
 
 
-# Path to the Zepto MCP runner script from the installed skill
+# Path to the Zepto MCP runner script (bundled at backend/scripts/zepto-mcp-runner.mjs)
 ZEPTO_RUNNER = os.environ.get(
     "ZEPTO_MCP_RUNNER",
     os.path.join(
-        os.path.expanduser("~"),
-        ".skills",
-        "zepto-prava-skill",
+        os.path.dirname(__file__),
+        "..",
         "scripts",
         "zepto-mcp-runner.mjs",
     ),
@@ -49,7 +48,10 @@ class ZeptoService:
         return search_res if isinstance(search_res, list) else []
 
     async def search_multiple(self, queries: list[str]) -> dict:
-        """Search for multiple products in a single MCP call."""
+        """Search for multiple products in a single MCP call.
+
+        Returns dict mapping query name -> list of product SKUs.
+        """
         calls = []
         try:
             addresses = self._run_mcp("list_saved_addresses", {})
@@ -61,12 +63,37 @@ class ZeptoService:
                 calls.append({"name": "get_location_serviceability", "arguments": {"latitude": 18.5089, "longitude": 73.9260}})
         except Exception:
             calls.append({"name": "get_location_serviceability", "arguments": {"latitude": 18.5089, "longitude": 73.9260}})
-            
+
         calls.append({"name": "search_multiple_products", "arguments": {"queries": queries, "pageNumber": 0}})
-        
+
         batch_res = self._run_batch(calls)
         search_res = batch_res[-1].get("result", {})
-        return search_res if isinstance(search_res, dict) else {}
+
+        # Zepto returns {"sections": [{"query": "...", "products": [...]}]}
+        # Normalize to {query_name: [products]}
+        results: dict[str, list[dict]] = {}
+        if isinstance(search_res, dict):
+            sections = search_res.get("sections", [])
+            if sections:
+                for section in sections:
+                    query = section.get("query", "")
+                    products = section.get("products", [])
+                    # Normalize product fields for SKU resolver
+                    normalized = []
+                    for p in products:
+                        normalized.append({
+                            "id": p.get("id", p.get("productVariantId", "")),
+                            "productId": p.get("id", p.get("productVariantId", "")),
+                            "name": p.get("name", ""),
+                            "price": p.get("price", 0) / 100 if p.get("price", 0) > 1000 else p.get("price", 0),
+                            "sellingPrice": p.get("price", 0) / 100 if p.get("price", 0) > 1000 else p.get("price", 0),
+                            "packSize": p.get("packSize", ""),
+                        })
+                    results[query] = normalized
+            else:
+                # Fallback: maybe it's already in {query: products} format
+                results = search_res
+        return results
 
     async def get_addresses(self) -> list[dict]:
         """Get saved delivery addresses."""
@@ -142,7 +169,7 @@ class ZeptoService:
     def _run_mcp(self, tool_name: str, args: dict) -> dict | list:
         """Execute a Zepto MCP tool via the runner script."""
         cmd = ["node", self.runner, "--compact", tool_name, json.dumps(args)]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace")
         if result.returncode != 0:
             raise RuntimeError(f"Zepto MCP error: {result.stderr}")
         return json.loads(result.stdout)
@@ -151,7 +178,7 @@ class ZeptoService:
         """Execute multiple Zepto MCP calls in a single process."""
         batch_json = json.dumps(calls)
         cmd = ["node", self.runner, "--compact", "--batch-json", batch_json]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace")
         if result.returncode != 0:
             raise RuntimeError(f"Zepto MCP batch error: {result.stderr}")
         return json.loads(result.stdout)
