@@ -6,16 +6,21 @@ interface LoadingSpinnerProps {
 
 export default function LoadingSpinner({ message }: LoadingSpinnerProps) {
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl shadow-md p-8 text-center">
-      <div className="flex justify-center mb-4">
-        <div className="relative">
-          <div className="w-12 h-12 border-4 border-orange-200 rounded-full animate-spin border-t-orange-500" />
-        </div>
+    <div className="glass rounded-2xl p-8 text-center animate-in">
+      <div className="flex justify-center gap-1.5 mb-4">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="w-2 h-2 rounded-full bg-accent"
+            style={{
+              animation: "pulse-dot 1.4s ease-in-out infinite",
+              animationDelay: `${i * 0.2}s`,
+            }}
+          />
+        ))}
       </div>
-      <p className="text-gray-600 font-medium">{message}</p>
-      <p className="text-gray-400 text-sm mt-1">
-        This may take a few seconds...
-      </p>
+      <p className="text-warm-300 text-sm font-medium">{message}</p>
+      <p className="text-warm-600 text-xs mt-1.5">This may take a moment</p>
     </div>
   );
 }

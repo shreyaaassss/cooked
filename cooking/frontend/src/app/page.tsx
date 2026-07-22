@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import ChatInput from "@/components/ChatInput";
 import RecipeCard from "@/components/RecipeCard";
 import ComparisonTable from "@/components/ComparisonTable";
@@ -31,19 +31,20 @@ export default function Home() {
   const [checkout, setCheckout] = useState<CheckoutInitResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [step, recipe, comparison]);
 
   async function handleDishSubmit(inputDish: string, inputServings: number) {
     setDish(inputDish);
     setServings(inputServings);
     setError(null);
-
-    // Step 1: Decompose recipe
     setStep("recipe");
     try {
       const recipeResult = await decomposeRecipe(inputDish, inputServings);
       setRecipe(recipeResult);
-
-      // Step 2: Compare prices
       setStep("comparing");
       const compareResult = await comparePrices(recipeResult.ingredients);
       setComparison(compareResult as unknown as CompareResult);
@@ -57,7 +58,6 @@ export default function Home() {
   async function handleConfirmCheckout() {
     if (!comparison?.recommended) return;
     setCheckoutLoading(true);
-
     try {
       const result = await initiateCheckout({
         platform: comparison.recommended.platform || "zepto",
@@ -79,7 +79,6 @@ export default function Home() {
   async function handlePaymentComplete() {
     if (!checkout?.order_id) return;
     setStep("completing");
-
     try {
       await completeCheckout(checkout.order_id);
       setStep("done");
@@ -102,21 +101,36 @@ export default function Home() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-5 pb-4">
       {/* Hero */}
       {step === "input" && (
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">
+        <div className="text-center pt-16 pb-8 animate-in">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-accent/10 mb-5">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-accent"
+            >
+              <path d="M8.5 14.5A2.5 2.5 0 0011 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 11-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 002.5 2.5z" />
+            </svg>
+          </div>
+          <h1 className="text-3xl font-semibold text-warm-50 tracking-tight mb-3">
             What are you cooking?
           </h1>
-          <p className="text-gray-500 text-lg">
-            Tell us the dish and we&apos;ll handle the rest — ingredients, price
-            comparison, and checkout.
+          <p className="text-warm-400 text-base max-w-md mx-auto leading-relaxed">
+            Tell us the dish and servings. We&apos;ll find ingredients, compare
+            prices, and handle checkout.
           </p>
         </div>
       )}
 
-      {/* Chat input */}
+      {/* Input */}
       {step !== "done" && step !== "completing" && (
         <ChatInput
           onSubmit={handleDishSubmit}
@@ -124,89 +138,126 @@ export default function Home() {
         />
       )}
 
-      {/* Loading: recipe decomposition */}
+      {/* User message */}
+      {dish && step !== "input" && (
+        <div className="flex justify-end animate-in">
+          <div className="glass glass-accent rounded-2xl rounded-br-md px-5 py-3 max-w-xs">
+            <p className="text-warm-50 text-sm font-medium capitalize">{dish}</p>
+            <p className="text-warm-600 text-xs mt-0.5">{servings} servings</p>
+          </div>
+        </div>
+      )}
+
+      {/* Loading: recipe */}
       {step === "recipe" && !recipe && (
-        <LoadingSpinner message={`Breaking down ${dish} into ingredients...`} />
+        <LoadingSpinner message={`Breaking down ${dish} into ingredients`} />
       )}
 
-      {/* Recipe card */}
+      {/* Recipe */}
       {recipe && step !== "input" && (
-        <RecipeCard
-          dish={recipe.dish}
-          servings={recipe.servings}
-          ingredients={recipe.ingredients}
-          skipped={comparison?.skipped}
-        />
+        <div className="animate-in">
+          <RecipeCard
+            dish={recipe.dish}
+            servings={recipe.servings}
+            ingredients={recipe.ingredients}
+            skipped={comparison?.skipped}
+          />
+        </div>
       )}
 
-      {/* Loading: comparing prices */}
+      {/* Loading: comparing */}
       {step === "comparing" && (
-        <LoadingSpinner message="Comparing prices across Zepto & Swiggy Instamart..." />
+        <LoadingSpinner message="Comparing prices across Zepto & Swiggy" />
       )}
 
-      {/* Comparison table */}
+      {/* Comparison */}
       {comparison &&
-        (step === "comparison" || step === "confirmation" || step === "prava_approval") && (
-          <ComparisonTable data={comparison} />
+        (step === "comparison" ||
+          step === "confirmation" ||
+          step === "prava_approval") && (
+          <div className="animate-in">
+            <ComparisonTable data={comparison} />
+          </div>
         )}
 
-      {/* Confirmation card */}
+      {/* Confirmation */}
       {comparison && step === "comparison" && (
-        <ConfirmationCard
-          recommendation={comparison.recommended}
-          skipped={comparison.skipped as SkippedItem[]}
-          dish={dish}
-          reasoning={comparison.reasoning}
-          onConfirm={handleConfirmCheckout}
-          onCancel={handleReset}
-          loading={checkoutLoading}
-        />
+        <div className="animate-in stagger-2">
+          <ConfirmationCard
+            recommendation={comparison.recommended}
+            skipped={comparison.skipped as SkippedItem[]}
+            dish={dish}
+            reasoning={comparison.reasoning}
+            onConfirm={handleConfirmCheckout}
+            onCancel={handleReset}
+            loading={checkoutLoading}
+          />
+        </div>
       )}
 
-      {/* Prava approval */}
+      {/* Prava */}
       {checkout && step === "prava_approval" && (
-        <PravaApproval
-          paymentUrl={checkout.prava_payment_url || "#"}
-          amount={comparison?.recommended?.total || 0}
-          platform={comparison?.recommended?.platform || "zepto"}
-          onComplete={handlePaymentComplete}
-        />
+        <div className="animate-in">
+          <PravaApproval
+            paymentUrl={checkout.prava_payment_url || "#"}
+            amount={comparison?.recommended?.total || 0}
+            platform={comparison?.recommended?.platform || "zepto"}
+            onComplete={handlePaymentComplete}
+          />
+        </div>
       )}
 
-      {/* Completing checkout */}
+      {/* Completing */}
       {step === "completing" && (
-        <LoadingSpinner message="Completing checkout with your Prava credentials..." />
+        <LoadingSpinner message="Completing checkout with Prava credentials" />
       )}
 
-      {/* Order complete */}
+      {/* Done */}
       {step === "done" && comparison && checkout && (
-        <OrderStatus
-          orderId={checkout.order_id}
-          dish={dish}
-          platform={comparison.recommended.platform || "zepto"}
-          items={comparison.recommended.items}
-          skipped={comparison.skipped as SkippedItem[]}
-          total={comparison.recommended.total}
-          status="paid"
-          eta={comparison.recommended.eta}
-          onNewOrder={handleReset}
-        />
+        <div className="animate-in">
+          <OrderStatus
+            orderId={checkout.order_id}
+            dish={dish}
+            platform={comparison.recommended.platform || "zepto"}
+            items={comparison.recommended.items}
+            skipped={comparison.skipped as SkippedItem[]}
+            total={comparison.recommended.total}
+            status="paid"
+            eta={comparison.recommended.eta}
+            onNewOrder={handleReset}
+          />
+        </div>
       )}
 
       {/* Error */}
       {step === "error" && error && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
-          <h3 className="font-bold text-red-800 mb-2">Something went wrong</h3>
-          <p className="text-red-600 text-sm mb-4">{error}</p>
+        <div className="glass rounded-2xl p-6 animate-in" style={{ borderColor: "rgba(248,113,113,0.15)" }}>
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-danger/10 flex items-center justify-center">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-danger">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="15" y1="9" x2="9" y2="15" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="font-semibold text-warm-50 text-sm">
+                Something went wrong
+              </h3>
+              <p className="text-warm-400 text-sm mt-1">{error}</p>
+            </div>
+          </div>
           <button
             onClick={handleReset}
-            className="px-4 py-2 bg-red-500 text-white rounded-xl text-sm
-                       font-medium hover:bg-red-600 transition-colors"
+            className="mt-4 px-4 py-2 rounded-xl text-sm font-medium
+                       bg-danger/10 text-danger hover:bg-danger/20 transition-colors"
           >
             Try again
           </button>
         </div>
       )}
+
+      <div ref={bottomRef} />
     </div>
   );
 }

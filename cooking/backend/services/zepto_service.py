@@ -27,21 +27,21 @@ class ZeptoService:
 
     async def search_product(self, query: str) -> list[dict]:
         """Search for a single product on Zepto."""
-        calls = []
-        try:
-            addresses = self._run_mcp("list_saved_addresses", {})
-            addr_list = addresses.get("addresses", []) if isinstance(addresses, dict) else []
-            if addr_list:
-                addr_id = addr_list[0]["id"]
-                calls.append({"name": "select_saved_address", "arguments": {"addressId": addr_id}})
-            else:
-                calls.append({"name": "get_location_serviceability", "arguments": {"latitude": 18.5089, "longitude": 73.9260}})
-        except Exception:
-            calls.append({"name": "get_location_serviceability", "arguments": {"latitude": 18.5089, "longitude": 73.9260}})
-            
-        calls.append({"name": "search_products", "arguments": {"query": query, "pageNumber": 0}})
-        
+        location_call = self._get_location_call()
+        calls = [location_call, {"name": "search_products", "arguments": {"query": query, "pageNumber": 0}}]
+
         batch_res = self._run_batch(calls)
+
+        # If address selection failed, retry with geo fallback
+        first_result = batch_res[0].get("result", {})
+        if self._is_address_failure(first_result) and location_call["name"] == "select_saved_address":
+            lat, lng = self._get_fallback_coords()
+            calls = [
+                {"name": "get_location_serviceability", "arguments": {"latitude": lat, "longitude": lng}},
+                {"name": "search_products", "arguments": {"query": query, "pageNumber": 0}},
+            ]
+            batch_res = self._run_batch(calls)
+
         search_res = batch_res[-1].get("result", {})
         if isinstance(search_res, dict):
             return search_res.get("products", [])
@@ -52,21 +52,21 @@ class ZeptoService:
 
         Returns dict mapping query name -> list of product SKUs.
         """
-        calls = []
-        try:
-            addresses = self._run_mcp("list_saved_addresses", {})
-            addr_list = addresses.get("addresses", []) if isinstance(addresses, dict) else []
-            if addr_list:
-                addr_id = addr_list[0]["id"]
-                calls.append({"name": "select_saved_address", "arguments": {"addressId": addr_id}})
-            else:
-                calls.append({"name": "get_location_serviceability", "arguments": {"latitude": 18.5089, "longitude": 73.9260}})
-        except Exception:
-            calls.append({"name": "get_location_serviceability", "arguments": {"latitude": 18.5089, "longitude": 73.9260}})
-
-        calls.append({"name": "search_multiple_products", "arguments": {"queries": queries, "pageNumber": 0}})
+        location_call = self._get_location_call()
+        calls = [location_call, {"name": "search_multiple_products", "arguments": {"queries": queries, "pageNumber": 0}}]
 
         batch_res = self._run_batch(calls)
+
+        # If address selection failed, retry with geo fallback
+        first_result = batch_res[0].get("result", {})
+        if self._is_address_failure(first_result) and location_call["name"] == "select_saved_address":
+            lat, lng = self._get_fallback_coords()
+            calls = [
+                {"name": "get_location_serviceability", "arguments": {"latitude": lat, "longitude": lng}},
+                {"name": "search_multiple_products", "arguments": {"queries": queries, "pageNumber": 0}},
+            ]
+            batch_res = self._run_batch(calls)
+
         search_res = batch_res[-1].get("result", {})
 
         # Zepto returns {"sections": [{"query": "...", "products": [...]}]}
@@ -165,6 +165,34 @@ class ZeptoService:
         calls.append({"name": "view_cart", "arguments": {}})
         calls.append({"name": "get_payment_methods", "arguments": {}})
         return self._run_batch(calls)
+
+    def _get_location_call(self) -> dict:
+        """Get the best location setup call: try saved address, fall back to geo."""
+        try:
+            addresses = self._run_mcp("list_saved_addresses", {})
+            addr_list = addresses.get("addresses", []) if isinstance(addresses, dict) else []
+            if addr_list:
+                self._last_address = addr_list[0]
+                return {"name": "select_saved_address", "arguments": {"addressId": addr_list[0]["id"]}}
+        except Exception:
+            pass
+        lat, lng = self._get_fallback_coords()
+        return {"name": "get_location_serviceability", "arguments": {"latitude": lat, "longitude": lng}}
+
+    def _get_fallback_coords(self) -> tuple[float, float]:
+        """Return coordinates for geo fallback — use saved address coords if available."""
+        addr = getattr(self, "_last_address", None)
+        if addr and addr.get("latitude") and addr.get("longitude"):
+            return addr["latitude"], addr["longitude"]
+        return 18.5089, 73.9260
+
+    @staticmethod
+    def _is_address_failure(result) -> bool:
+        """Check if an MCP result indicates address selection failed."""
+        if isinstance(result, dict):
+            text = result.get("text", "")
+            return "does not deliver" in text.lower() or "store not selected" in text.lower()
+        return False
 
     def _run_mcp(self, tool_name: str, args: dict) -> dict | list:
         """Execute a Zepto MCP tool via the runner script."""

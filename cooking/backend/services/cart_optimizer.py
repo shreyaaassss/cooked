@@ -166,11 +166,35 @@ class CartOptimizer:
             if c is not best and c.get("strategy") == "single_platform"
         ]
         if others:
-            diff = others[0]["total"] - best["total"]
-            return (
-                f"All from {best['platform'].replace('_', ' ').title()}: "
-                f"₹{best['total']:.0f} total "
-                f"(₹{abs(diff):.0f} {'cheaper' if diff > 0 else 'more'} "
-                f"than {others[0]['platform'].replace('_', ' ').title()})"
-            )
+            other = others[0]
+            diff = other["total"] - best["total"]
+            best_name = best["platform"].replace("_", " ").title()
+            other_name = other["platform"].replace("_", " ").title()
+            if diff > 0:
+                return (
+                    f"All from {best_name}: "
+                    f"₹{best['total']:.0f} total "
+                    f"(₹{diff:.0f} cheaper than {other_name})"
+                )
+            elif diff < 0:
+                other_unavailable = other.get("unavailable", [])
+                if other_unavailable:
+                    return (
+                        f"All from {best_name}: "
+                        f"₹{best['total']:.0f} total "
+                        f"(₹{abs(diff):.0f} more than {other_name}, "
+                        f"but {other_name} is missing "
+                        f"{', '.join(other_unavailable)})"
+                    )
+                return (
+                    f"All from {best_name}: "
+                    f"₹{best['total']:.0f} total "
+                    f"(same price range as {other_name})"
+                )
+            else:
+                return (
+                    f"All from {best_name}: "
+                    f"₹{best['total']:.0f} total "
+                    f"(same price as {other_name})"
+                )
         return f"Best option: {best['platform']} at ₹{best['total']:.0f}"
