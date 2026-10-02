@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { agentApprove, agentRun, agentStreamUrl, getOrder } from "@/lib/api";
+import { ClaudeChatInput } from "@/components/ui/claude-style-ai-input";
 
 /* ── Event / session types (loose — the backend's event `data` payload
    shape varies by event type; see orchestrator.py's `emit()` calls) ── */
@@ -46,7 +47,6 @@ function AgentPageInner() {
   const urlSession = searchParams.get("session");
 
   const sessionId = urlSession; // the URL is the single source of truth for which run is shown
-  const [goal, setGoal] = useState("");
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
@@ -120,9 +120,8 @@ function AgentPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlSession]);
 
-  async function handleStart(e: React.FormEvent) {
-    e.preventDefault();
-    const text = goal.trim();
+  async function handleStart(rawText: string) {
+    const text = rawText.trim();
     if (!text || starting) return;
     setStarting(true);
     setStartError(null);
@@ -153,7 +152,6 @@ function AgentPageInner() {
 
   function handleReset() {
     esRef.current?.close();
-    setGoal("");
     setEvents([]);
     setApproval(null);
     setOrder(null);
@@ -165,49 +163,46 @@ function AgentPageInner() {
   /* ── Landing: no session yet ── */
   if (!sessionId) {
     return (
-      <div className="max-w-2xl mx-auto py-12">
-        <div className="text-center mb-8">
-          <div className="text-5xl mb-4">🛒</div>
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">What do you need?</h1>
-          <p className="text-gray-500 text-sm max-w-md mx-auto">
-            Give the agent one goal. It plans, checks your pantry, compares Zepto and
-            Swiggy Instamart, and asks for your approval before spending anything.
-          </p>
-        </div>
+      <div className="-mx-4 -my-8 min-h-[calc(100vh-57px)] bg-[#262624] flex items-center justify-center p-4">
+        <div className="w-full max-w-2xl">
+          <div className="mb-8 text-center py-10">
+            <h1 className="text-3xl font-serif font-light text-[#C2C0B6] mb-2">
+              What do you need?
+            </h1>
+            <p className="text-zinc-500 text-sm max-w-md mx-auto">
+              Give the agent one goal. It plans, checks your pantry, compares Zepto and
+              Swiggy Instamart, and asks for your approval before spending anything.
+            </p>
+          </div>
 
-        <form onSubmit={handleStart} className="flex gap-2 bg-white border border-gray-200 rounded-2xl shadow-lg p-3 mb-4">
-          <input
-            type="text"
-            value={goal}
-            onChange={(e) => setGoal(e.target.value)}
-            placeholder="e.g. order 1kg onions and paneer, budget ₹800"
-            className="flex-1 text-sm outline-none bg-transparent text-gray-800 placeholder-gray-400"
+          <ClaudeChatInput
+            onSendMessage={(message) => handleStart(message)}
             disabled={starting}
-            autoFocus
+            placeholder="e.g. order 1kg onions and paneer, budget ₹800"
+            maxFiles={0}
+            // QuickPick's agent always runs on one fixed model (OpenAI
+            // GPT-4o) with no effort setting — a single real option here
+            // instead of this component's default multi-model menu, so the
+            // picker doesn't imply a choice that doesn't actually exist.
+            models={[{ id: "gpt-4o", name: "GPT-4o (OpenAI)", description: "Goal parsing & recipe breakdown" }]}
           />
-          <button
-            type="submit"
-            disabled={starting || !goal.trim()}
-            className="px-5 py-2 bg-orange-500 text-white text-sm font-semibold rounded-xl
-                       hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {starting ? "Starting…" : "Start"}
-          </button>
-        </form>
 
-        {startError && <p className="text-sm text-red-600 mb-4">{startError}</p>}
+          {starting && <p className="text-center text-sm text-zinc-500 mt-4">Starting…</p>}
+          {startError && <p className="text-sm text-red-400 mt-4 text-center">{startError}</p>}
 
-        <div className="flex flex-wrap justify-center gap-2">
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s}
-              onClick={() => setGoal(s)}
-              className="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm text-gray-600
-                         hover:border-orange-300 hover:text-orange-600 transition-colors"
-            >
-              {s}
-            </button>
-          ))}
+          <div className="flex flex-wrap justify-center gap-2 mt-6">
+            {SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => handleStart(s)}
+                disabled={starting}
+                className="px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-full text-sm text-zinc-400
+                           hover:border-amber-600/50 hover:text-amber-500 transition-colors disabled:opacity-50"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -396,7 +391,7 @@ function OrderCard({ orderId, paymentUrl }: { orderId: string; paymentUrl: strin
         </a>
       ) : (
         <p className="text-sm text-gray-500">
-          Cart is ready — complete payment in the store&apos;s app. CookCart can&apos;t confirm this
+          Cart is ready — complete payment in the store&apos;s app. QuickPick can&apos;t confirm this
           order automatically.
         </p>
       )}

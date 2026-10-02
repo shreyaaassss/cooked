@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from backend.config import OPENAI_API_KEY, OPENAI_MODEL
 from backend.services.sanitize import sanitize_text
 
-AGENT_SYSTEM_PROMPT = """You are CookCart's grocery ordering assistant. Users tell you what groceries they need and you help them order.
+AGENT_SYSTEM_PROMPT = """You are QuickPick's grocery ordering assistant. Users tell you what groceries they need and you help them order.
 
 Your job is to understand what the user wants and respond with a JSON object.
 

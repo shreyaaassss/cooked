@@ -68,10 +68,21 @@ export default function SettingsPage() {
       <div className="bg-white border border-gray-200 rounded-2xl shadow-md p-6">
         <h3 className="text-lg font-bold text-gray-800 mb-1">Payment</h3>
         <p className="text-sm text-gray-400">
-          CookCart never handles your card or UPI details. After you approve an
+          QuickPick never handles your card or UPI details. After you approve an
           order, payment is completed on the store&apos;s own checkout (Zepto
-          gives a secure payment link). CookCart only marks an order successful
+          gives a secure payment link). QuickPick only marks an order successful
           once the store confirms it.
+        </p>
+      </div>
+
+      {/* Zepto / Swiggy accounts */}
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-md p-6">
+        <h3 className="text-lg font-bold text-gray-800 mb-1">Zepto &amp; Swiggy</h3>
+        <p className="text-sm text-gray-400">
+          Every QuickPick account has its own pantry, spend limits and orders, but
+          they currently shop through one shared Zepto and Swiggy login, not a
+          separate one per person. Letting each account connect its own Zepto/Swiggy
+          would need real per-user OAuth, which isn&apos;t set up yet.
         </p>
       </div>
     </div>

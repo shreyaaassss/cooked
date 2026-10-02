@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.config import FRONTEND_URL
+from backend.config import FRONTEND_URL, FRONTEND_URL_REGEX
 from backend.models.database import init_db
-from backend.routers import address, agent, checkout, compare, orders, pantry, recipe
+from backend.routers import address, agent, auth, checkout, compare, orders, pantry, recipe
 
 app = FastAPI(
-    title="CookCart API",
+    title="QuickPick API",
     description="Autonomous grocery agent (Zepto + Swiggy Instamart)",
     version="1.0.0",
 )
@@ -18,11 +18,17 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ],
+    # Vercel gives every branch/PR its own preview URL in addition to the
+    # stable production one; an exact-match allowlist alone would break
+    # those. FRONTEND_URL_REGEX (unset by default) lets deploys opt into
+    # matching a pattern, e.g. https://quickpick.*\.vercel\.app
+    allow_origin_regex=FRONTEND_URL_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(agent.router, prefix="/api/agent", tags=["agent"])
 app.include_router(address.router, prefix="/api/address", tags=["address"])
 app.include_router(recipe.router, prefix="/api/recipe", tags=["recipe"])
@@ -40,7 +46,7 @@ async def startup():
 @app.get("/")
 async def root():
     return {
-        "app": "CookCart",
+        "app": "QuickPick",
         "version": "1.0.0",
         "description": "Recipe-to-Checkout Grocery Agent",
         "docs": "/docs",
