@@ -31,6 +31,9 @@ _MIGRATIONS = [
     "ALTER TABLE orders DROP CONSTRAINT IF EXISTS ck_order_status",
     "ALTER TABLE orders ADD CONSTRAINT ck_order_status CHECK (status IN ("
     "'pending_approval','approved','awaiting_user_payment','payment_pending','paid','failed','cancelled'))",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_hash TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username) WHERE username IS NOT NULL",
 ]
 
 

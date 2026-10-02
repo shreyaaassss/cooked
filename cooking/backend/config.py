@@ -30,3 +30,6 @@ PLATFORM_ESTIMATES = {
 
 # CORS origins
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+# Optional regex for additional allowed origins (e.g. Vercel preview URLs).
+# Example: FRONTEND_URL_REGEX=https://quickpick.*\.vercel\.app
+FRONTEND_URL_REGEX = os.environ.get("FRONTEND_URL_REGEX") or None

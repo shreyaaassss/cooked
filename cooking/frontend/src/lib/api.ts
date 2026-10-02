@@ -1,4 +1,11 @@
+import { getCurrentUserId } from "./auth";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+/** Explicit userId wins; otherwise fall back to the logged-in session. */
+function resolveUserId(userId?: string): string | undefined {
+  return userId || getCurrentUserId();
+}
 
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -97,6 +104,7 @@ export async function decomposeRecipe(dish: string, servings: number) {
 
 // ===== Pantry =====
 export async function getPantryStaples(userId?: string) {
+  userId = resolveUserId(userId);
   const params = userId ? `?user_id=${userId}` : "";
   return fetchAPI<
     Array<{ id: string; ingredient_name: string; always_have: boolean }>
@@ -104,6 +112,7 @@ export async function getPantryStaples(userId?: string) {
 }
 
 export async function addPantryStaple(ingredientName: string, userId?: string) {
+  userId = resolveUserId(userId);
   return fetchAPI("/api/pantry/staples", {
     method: "POST",
     body: JSON.stringify({
@@ -117,6 +126,7 @@ export async function removePantryStaple(
   ingredientName: string,
   userId?: string
 ) {
+  userId = resolveUserId(userId);
   const params = userId ? `?user_id=${userId}` : "";
   return fetchAPI(`/api/pantry/staples/${ingredientName}${params}`, {
     method: "DELETE",
@@ -128,6 +138,7 @@ export async function comparePrices(
   ingredients: Array<Record<string, unknown>>,
   userId?: string
 ) {
+  userId = resolveUserId(userId);
   return fetchAPI("/api/compare/prices", {
     method: "POST",
     body: JSON.stringify({
@@ -139,6 +150,7 @@ export async function comparePrices(
 
 // ===== Agent runs (state machine) =====
 export async function agentRun(goal: string, userId?: string) {
+  userId = resolveUserId(userId);
   return fetchAPI<{ session_id: string; state: string; reused: boolean }>(
     "/api/agent/run",
     {
@@ -172,6 +184,7 @@ export async function getOrder(orderId: string) {
 
 // ===== Orders =====
 export async function listOrders(userId?: string) {
+  userId = resolveUserId(userId);
   const params = userId ? `?user_id=${userId}` : "";
   return fetchAPI<
     Array<{

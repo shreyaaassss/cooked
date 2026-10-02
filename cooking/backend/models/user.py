@@ -14,6 +14,11 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
     email = Column(String, unique=True)
+    # Login identity. Separate accounts, separate pantry/mandates/orders/agent
+    # sessions — every query elsewhere already filters by user_id, so a real
+    # username+PIN here is what actually turns that into per-user isolation.
+    username = Column(String, unique=True, index=True)
+    pin_hash = Column(String)
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
