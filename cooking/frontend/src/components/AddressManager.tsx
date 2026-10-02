@@ -176,8 +176,7 @@ export default function AddressManager() {
           </h4>
           <button
             onClick={() => setShowAddForm(!showAddForm)}
-            className="text-xs px-3 py-1.5 bg-purple-50 text-purple-600 rounded-lg
-                       hover:bg-purple-100 transition-colors font-medium border border-purple-200"
+            className="text-xs px-3 py-1.5 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 transition-colors font-medium border border-purple-200"
           >
             {showAddForm ? "Cancel" : "+ Add New"}
           </button>
@@ -296,9 +295,7 @@ export default function AddressManager() {
             </div>
 
             <button type="button" onClick={handleLocate}
-              className="w-full text-sm text-purple-600 hover:text-purple-700 py-2.5
-                         border border-dashed border-purple-300 rounded-xl
-                         hover:bg-purple-50 transition-colors font-medium">
+              className="w-full text-sm text-purple-600 hover:text-purple-700 py-2.5 border border-dashed border-purple-300 rounded-xl hover:bg-purple-50 transition-colors font-medium">
               Use my current location
             </button>
 
@@ -314,8 +311,7 @@ export default function AddressManager() {
             </div>
 
             <button type="submit" disabled={addingAddress}
-              className="w-full px-4 py-3 bg-purple-500 text-white text-sm font-semibold
-                         rounded-xl hover:bg-purple-600 transition-colors disabled:opacity-50">
+              className="w-full px-4 py-3 bg-purple-500 text-white text-sm font-semibold rounded-xl hover:bg-purple-600 transition-colors disabled:opacity-50">
               {addingAddress ? "Saving..." : "Save Address"}
             </button>
           </form>

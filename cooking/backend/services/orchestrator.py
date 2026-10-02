@@ -25,6 +25,8 @@ from backend.config import PLATFORM_ESTIMATES, SEARCH_TIMEOUT
 from backend.models.agent_session import AgentSession
 from backend.models.database import SessionLocal
 from backend.models.mandate import SpendMandate
+from backend.models.order import Order
+from backend.services import order_execution as oe
 from backend.services.agent_service import ParsedIntent, parse_goal
 from backend.services.cart_optimizer import CartOptimizer, PlatformCart
 from backend.services.pantry_service import apply_pantry_diff
@@ -38,6 +40,9 @@ from backend.services.zepto_service import ZeptoService
 log = logging.getLogger("orchestrator")
 
 MAX_SEARCH_ATTEMPTS = 2
+MAX_EXECUTE_ATTEMPTS = 2
+MAX_VERIFY_ATTEMPTS = 3
+VERIFY_POLL_SECONDS = 4
 PLATFORMS = ("zepto", "swiggy_instamart")
 
 
@@ -193,6 +198,7 @@ def _get(session_id) -> dict:
             "approval_status": row.approval_status,
             "recovery": row.recovery,
             "attempts": dict(row.attempts or {}),
+            "order_id": str(row.order_id) if row.order_id else None,
         }
 
 
@@ -420,6 +426,16 @@ async def h_recover(sid) -> State | None:
         _update(sid, recovery=None, attempts={**data["attempts"], "POLICY_CURSOR": cursor})
         return S.POLICY
 
+    if action == "retry_execute":
+        emit(sid, "Retrying order placement…", "warn")
+        _update(sid, recovery=None)
+        return S.EXECUTE
+
+    if action == "retry_verify":
+        await asyncio.sleep(VERIFY_POLL_SECONDS)
+        _update(sid, recovery=None)
+        return S.VERIFY
+
     return _fail(sid, f"No recovery available for: {rec}")
 
 
@@ -601,13 +617,164 @@ async def h_approval(sid) -> State | None:
     return _fail(sid, f"Unexpected approval status: {status}")
 
 
+def _leg_items(cart: dict) -> dict[str, list[dict]]:
+    """Which items go to which platform's MCP, keyed by platform."""
+    if cart.get("strategy") == "split":
+        return {"zepto": cart.get("zepto_items", []), "swiggy_instamart": cart.get("swiggy_items", [])}
+    return {cart["platform"]: cart.get("items", [])}
+
+
+async def _run_legs(legs: dict[str, list[dict]]) -> list[dict]:
+    async def run_leg(platform: str, items: list[dict]) -> dict:
+        fn = oe.execute_zepto if platform == "zepto" else oe.execute_swiggy
+        try:
+            return await fn(items)
+        except Exception as e:
+            return {"platform": platform, "error": sanitize_text(e, 200)}
+
+    return await asyncio.gather(*(run_leg(p, i) for p, i in legs.items()))
+
+
 async def h_execute(sid) -> State | None:
-    # Cart build + payment-link creation is implemented in the next step.
-    return _fail(sid, "Order execution isn't implemented yet (approval was recorded; nothing was purchased).")
+    data = _get(sid)
+
+    # Idempotent: if an order already exists for this session (resumed after
+    # a crash, or a duplicate approval), don't place it twice.
+    with SessionLocal() as db:
+        existing = db.query(Order).filter(Order.idempotency_key == f"agent:{sid}").first()
+    if existing:
+        _update(sid, order_id=existing.id)
+        return S.VERIFY
+
+    cart = data["cart"]
+    legs = _leg_items(cart)
+    attempt = _bump(sid, "EXECUTE")
+    emit(sid, "Placing your order" + (f" (attempt {attempt})" if attempt > 1 else "") + "…")
+
+    results = await _blocking(_run_legs, legs)
+    ok = [r for r in results if "error" not in r]
+    bad = [r for r in results if "error" in r]
+
+    for r in bad:
+        emit(sid, f"{r['platform'].replace('_', ' ').title()} order failed: {r['error']}", "warn")
+    for r in ok:
+        label = r["platform"].replace("_", " ").title()
+        emit(
+            sid,
+            f"{label} cart ready — payment link created" if r.get("payment_url")
+            else f"{label} cart ready — complete payment in the {label} app",
+            "success",
+        )
+
+    if not ok:
+        if attempt < MAX_EXECUTE_ATTEMPTS:
+            _update(sid, recovery={"from": "EXECUTE", "action": "retry_execute", "reason": bad})
+            return S.RECOVER
+        with SessionLocal() as db:
+            order = Order(
+                user_id=_sid(data["user_id"]), agent_session_id=_sid(sid),
+                source_recipe=sanitize_text(data["goal"], 150),
+                ingredients_requested=cart_items(cart),
+                ingredients_skipped=data["pantry"]["skipped"],
+                platform_chosen=None if cart.get("strategy") == "split" else cart["platform"],
+                cart_items=cart_items(cart), total_amount=data["total"],
+                delivery_fee=cart.get("delivery_fee"), eta_minutes=cart.get("eta"),
+                status="failed", payment_status="not_started", order_status="not_placed",
+                platform_orders={r["platform"]: r for r in bad},
+                failure_state={"stage": "EXECUTE", "legs": bad},
+                idempotency_key=f"agent:{sid}",
+            )
+            db.add(order)
+            db.commit()
+            db.refresh(order)
+        _update(sid, order_id=order.id)
+        stores = " or ".join(p.replace("_", " ").title() for p in legs)
+        return _fail(sid, f"Couldn't place the order on {stores}. Nothing was charged.", True)
+
+    payment_url = next((r["payment_url"] for r in ok if r.get("payment_url")), None)
+    platform_order_id = next((r["platform_order_id"] for r in ok if r.get("platform_order_id")), None)
+
+    with SessionLocal() as db:
+        order = Order(
+            user_id=_sid(data["user_id"]), agent_session_id=_sid(sid),
+            source_recipe=sanitize_text(data["goal"], 150),
+            ingredients_requested=cart_items(cart),
+            ingredients_skipped=data["pantry"]["skipped"],
+            platform_chosen=None if cart.get("strategy") == "split" else cart["platform"],
+            cart_items=cart_items(cart), total_amount=data["total"],
+            delivery_fee=cart.get("delivery_fee"), eta_minutes=cart.get("eta"),
+            status="awaiting_user_payment",
+            payment_status="link_created" if payment_url else "not_started",
+            order_status="not_placed",
+            payment_url=payment_url,
+            payment_ref=platform_order_id,
+            platform_order_id=platform_order_id,
+            platform_orders={r["platform"]: {k: v for k, v in r.items() if k != "raw"} for r in (ok + bad)},
+            failure_state={"stage": "EXECUTE", "legs": bad} if bad else None,
+            idempotency_key=f"agent:{sid}",
+        )
+        db.add(order)
+        db.commit()
+        db.refresh(order)
+    _update(sid, order_id=order.id)
+
+    msg = f"Order ready — ₹{data['total']:.0f}."
+    if payment_url:
+        msg += " Open the payment link to finish."
+    emit(sid, msg, "success", data={"order_id": str(order.id), "payment_url": payment_url}, type_="order")
+    return S.VERIFY
 
 
 async def h_verify(sid) -> State | None:
-    return _fail(sid, "Order verification isn't implemented yet.")
+    data = _get(sid)
+    if not data["order_id"]:
+        return _fail(sid, "Lost track of the order while verifying it.")
+
+    with SessionLocal() as db:
+        order = db.get(Order, _sid(data["order_id"]))
+    if order is None:
+        return _fail(sid, "Lost track of the order while verifying it.")
+
+    split_note = (
+        " The Swiggy Instamart portion isn't tracked automatically — check that app too."
+        if order.platform_chosen is None else ""
+    )
+
+    if not order.platform_order_id:
+        emit(
+            sid,
+            "Cart is ready. I can't verify this store's order automatically — "
+            "please complete payment and check the app for confirmation." + split_note,
+            "warn",
+        )
+        return S.DONE
+
+    attempt = _bump(sid, "VERIFY")
+    emit(sid, f"Checking payment status (attempt {attempt})…")
+    result = await _blocking(oe.check_zepto_payment, order.platform_order_id)
+    status = result["status"]
+
+    with SessionLocal() as db:
+        o = db.get(Order, order.id)
+        o.payment_status = "paid" if status == "paid" else "failed" if status == "failed" else "pending"
+        if status == "paid":
+            o.order_status, o.status = "verified", "paid"
+        elif status == "failed":
+            o.order_status, o.status = "failed", "failed"
+        db.commit()
+
+    if status == "paid":
+        emit(sid, "Payment confirmed — order placed." + split_note, "success", data={"order_id": str(order.id)})
+        return S.DONE
+    if status == "failed":
+        emit(sid, "Payment wasn't completed.", "warn")
+        return _fail(sid, "Payment failed or was declined. No further charge was attempted.", True)
+
+    if attempt < MAX_VERIFY_ATTEMPTS:
+        _update(sid, recovery={"from": "VERIFY", "action": "retry_verify"})
+        return S.RECOVER
+    emit(sid, "Payment is still pending — approve it when ready; I'll stop checking for now." + split_note, "warn")
+    return S.DONE
 
 
 HANDLERS: dict[State, Callable[[uuid.UUID], Awaitable[State | None]]] = {
