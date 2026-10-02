@@ -37,16 +37,7 @@ class SwiggyInstamartService:
 
     async def search_product(self, query: str) -> list[dict]:
         """Search for a single product on Swiggy Instamart."""
-        address_id = None
-        try:
-            addresses = self._run_mcp("get_addresses", {})
-            addr_list = addresses.get("addresses", []) if isinstance(addresses, dict) else []
-            if addr_list:
-                address_id = addr_list[0]["id"]
-        except Exception:
-            pass
-        if not address_id:
-            address_id = "86719714"
+        address_id = await self._default_address_id()
 
         result = self._run_mcp("search_products", {"query": query, "addressId": address_id})
         raw_products = self._extract_products(result)
@@ -59,6 +50,7 @@ class SwiggyInstamartService:
                 flat_skus.append({
                     "id": var.get("skuId"),
                     "productId": var.get("skuId"),
+                    "spinId": var.get("spinId"),
                     "name": f"{prod.get('displayName', '')} - {var.get('displayName', '')}",
                     "price": float(price_obj.get("offerPrice", price_obj.get("mrp", 0))),
                     "packSize": var.get("quantityDescription"),
@@ -68,16 +60,7 @@ class SwiggyInstamartService:
     async def search_multiple(self, queries: list[str]) -> dict:
         """Search for multiple products. Runs one search per query
         in a single MCP process via batch mode."""
-        address_id = None
-        try:
-            addresses = self._run_mcp("get_addresses", {})
-            addr_list = addresses.get("addresses", []) if isinstance(addresses, dict) else []
-            if addr_list:
-                address_id = addr_list[0]["id"]
-        except Exception:
-            pass
-        if not address_id:
-            address_id = "86719714"
+        address_id = await self._default_address_id()
 
         calls = [
             {"name": "search_products", "arguments": {"query": q, "addressId": address_id}}
@@ -106,12 +89,28 @@ class SwiggyInstamartService:
                     flat_skus.append({
                         "id": var.get("skuId"),
                         "productId": var.get("skuId"),
+                        "spinId": var.get("spinId"),
                         "name": f"{prod.get('displayName', '')} - {var.get('displayName', '')}",
                         "price": float(price_obj.get("offerPrice", price_obj.get("mrp", 0))),
                         "packSize": var.get("quantityDescription"),
                     })
             results[query] = flat_skus
         return results
+
+    async def _default_address_id(self) -> str:
+        """The account's default saved address, per get_addresses' own
+        ranking — not just the first item in the list."""
+        try:
+            addresses = self._run_mcp("get_addresses", {})
+        except Exception:
+            return "86719714"  # last-resort fallback; search will just find nothing useful
+        if not isinstance(addresses, dict):
+            return "86719714"
+        default_id = (addresses.get("resolution") or {}).get("defaultAddressId")
+        if default_id:
+            return default_id
+        addr_list = addresses.get("addresses", [])
+        return addr_list[0]["id"] if addr_list else "86719714"
 
     @staticmethod
     def _extract_products(raw) -> list:
@@ -130,45 +129,49 @@ class SwiggyInstamartService:
         """Get saved delivery addresses."""
         return self._run_mcp("get_addresses", {})
 
-    async def add_to_cart(self, product_id: str, quantity: int) -> dict:
-        """Add item to Swiggy Instamart cart."""
+    async def update_cart(self, items: list[dict], address_id: str) -> dict:
+        """Replace the cart contents. Each item needs both `spinId` and
+        `skuId` from search_products — skuId alone is rejected by the server.
+        """
         return self._run_mcp(
-            "add_to_cart", {"productId": product_id, "quantity": quantity}
+            "update_cart",
+            {
+                "selectedAddressId": address_id,
+                "items": [
+                    {"spinId": i["spin_id"], "skuId": i["sku_id"], "quantity": i.get("quantity", 1)}
+                    for i in items
+                ],
+            },
         )
 
-    async def update_cart(self, product_id: str, quantity: int) -> dict:
-        """Add/update product in cart (alias matching Zepto's API)."""
-        return self._run_mcp(
-            "update_cart", {"productId": product_id, "quantity": quantity}
-        )
-
-    async def view_cart(self) -> dict:
+    async def get_cart(self) -> dict:
         """View current Swiggy Instamart cart."""
-        return self._run_mcp("view_cart", {})
+        return self._run_mcp("get_cart", {})
 
-    async def get_payment_methods(self) -> list:
-        """Get available payment methods."""
-        return self._run_mcp("get_payment_methods", {})
+    async def clear_cart(self) -> dict:
+        """Empty the cart."""
+        return self._run_mcp("clear_cart", {})
 
-    async def build_cart_batch(
-        self, address_id: str, items: list[dict]
-    ) -> list[dict]:
-        """Build a full cart in one batch: select address + add items + view cart."""
+    async def get_payment_options(self, address_id: str) -> dict:
+        """Available payment methods for the current cart."""
+        return self._run_mcp("get_payment_options", {"addressId": address_id})
+
+    async def build_cart_batch(self, address_id: str, items: list[dict]) -> list[dict]:
+        """Build the cart in one batch: set items, then view it, then payment options."""
         calls = [
-            {"name": "select_address", "arguments": {"addressId": address_id}}
+            {
+                "name": "update_cart",
+                "arguments": {
+                    "selectedAddressId": address_id,
+                    "items": [
+                        {"spinId": i["spin_id"], "skuId": i["sku_id"], "quantity": i.get("quantity", 1)}
+                        for i in items
+                    ],
+                },
+            },
+            {"name": "get_cart", "arguments": {}},
+            {"name": "get_payment_options", "arguments": {"addressId": address_id}},
         ]
-        for item in items:
-            calls.append(
-                {
-                    "name": "add_to_cart",
-                    "arguments": {
-                        "productId": item["sku_id"],
-                        "quantity": item.get("quantity", 1),
-                    },
-                }
-            )
-        calls.append({"name": "view_cart", "arguments": {}})
-        calls.append({"name": "get_payment_methods", "arguments": {}})
         return self._run_batch(calls)
 
     # ── Internal runner methods (same pattern as ZeptoService) ──

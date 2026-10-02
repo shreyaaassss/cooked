@@ -95,6 +95,9 @@ class SKUResolver:
             "ingredient": ingredient_name,
             "status": "available",
             "sku_id": sku.get("id", sku.get("productId", "")),
+            # Swiggy's update_cart additionally requires spinId alongside skuId;
+            # Zepto has no such field, so this is None there.
+            "spin_id": sku.get("spinId"),
             "sku_name": sku.get("name", sku.get("productName", ingredient_name)),
             "pack_size": sku.get("packSize", sku.get("quantity", "")),
             "quantity": best["packs_needed"],

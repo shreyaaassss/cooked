@@ -34,6 +34,13 @@ class ExecutionError(RuntimeError):
 
 
 def _first_address_id(addresses) -> str:
+    """The account's default address where the platform ranks one, else the
+    first saved address. (Confirmed against a live Swiggy response that
+    `resolution.defaultAddressId` is not always the first list item.)"""
+    if isinstance(addresses, dict):
+        default_id = (addresses.get("resolution") or {}).get("defaultAddressId")
+        if default_id:
+            return default_id
     addr_list = addresses.get("addresses", []) if isinstance(addresses, dict) else addresses
     if not addr_list:
         raise ExecutionError("no saved delivery address on file")
@@ -86,10 +93,24 @@ async def execute_zepto(items: list[dict]) -> dict:
 
 
 async def execute_swiggy(items: list[dict]) -> dict:
-    """Build the Swiggy Instamart cart. No automated payment."""
+    """Build the Swiggy Instamart cart.
+
+    Swiggy's MCP does expose a real `checkout` tool (confirmed live: it also
+    has get_payment_options / check_payment_status / confirm_order), so this
+    isn't necessarily cart-only the way the skill docs implied. We stop at
+    "cart built" deliberately for now — `checkout`'s response shape, and
+    exactly what `paymentMethod`/`generateUPIQR` do, haven't been exercised
+    live (financial action, needs explicit sign-off before wiring up). Fill
+    in a real `checkout` call here once that's been verified.
+    """
     addresses = await swiggy.get_addresses()
     address_id = _first_address_id(addresses)
-    cart_items = [{"sku_id": i["sku_id"], "quantity": int(i.get("quantity", 1))} for i in items]
+    cart_items = [
+        {"sku_id": i["sku_id"], "spin_id": i.get("spin_id"), "quantity": int(i.get("quantity", 1))}
+        for i in items
+    ]
+    if any(not i["spin_id"] for i in cart_items):
+        raise ExecutionError("missing spinId for a Swiggy item — re-search before executing")
 
     try:
         batch = await swiggy.build_cart_batch(address_id, cart_items)
