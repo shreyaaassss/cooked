@@ -73,7 +73,10 @@ async def execute_zepto(items: list[dict]) -> dict:
     cart_items = [{"sku_id": i["sku_id"], "quantity": int(i.get("quantity", 1))} for i in items]
 
     try:
-        await zepto.build_cart_batch(address_id, cart_items)
+        # search results don't carry productId (distinct from productVariantId) —
+        # resolve each item's full ids first; update_cart silently no-ops without them.
+        resolved_items = await zepto.resolve_cart_items(cart_items)
+        await zepto.build_cart_batch(address_id, resolved_items)
     except Exception as e:
         raise ExecutionError(f"couldn't build the Zepto cart: {sanitize_text(e, 200)}") from e
 

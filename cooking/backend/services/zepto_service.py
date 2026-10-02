@@ -103,11 +103,55 @@ class ZeptoService:
         """Select a delivery address."""
         return self._run_mcp("select_saved_address", {"addressId": address_id})
 
-    async def update_cart(self, product_id: str, quantity: int) -> dict:
-        """Add/update product in cart."""
+    async def get_product_details(self, variant_id: str) -> dict:
+        """Full product detail for a variant — the only place `productId`
+        (distinct from `productVariantId`) is returned; search results
+        don't include it."""
+        return self._run_mcp("get_product_details", {"product_variant_id": variant_id})
+
+    def _cart_item_args(self, item: dict) -> dict:
+        """Each cart item needs productId, productVariantId AND
+        storeProductId together — confirmed live that productVariantId
+        alone silently no-ops (no error, cart just stays empty)."""
+        return {
+            "productId": item["product_id"],
+            "productVariantId": item["sku_id"],
+            "storeProductId": item["store_product_id"],
+            "quantity": item.get("quantity", 1),
+        }
+
+    async def update_cart(self, items: list[dict], device_id: str = "cookcart-agent") -> dict:
+        """Add/update items in cart. `items` must already carry product_id
+        and store_product_id (see `resolve_cart_items`)."""
         return self._run_mcp(
-            "update_cart", {"productId": product_id, "quantity": quantity}
+            "update_cart",
+            {"deviceId": device_id, "cartItems": [self._cart_item_args(i) for i in items]},
         )
+
+    async def resolve_cart_items(self, resolved_skus: list[dict]) -> list[dict]:
+        """Fetch each item's real productId/storeProductId via
+        get_product_details, batched into one subprocess call. Needed before
+        update_cart, since search results alone don't carry productId."""
+        calls = [
+            {"name": "get_product_details", "arguments": {"product_variant_id": i["sku_id"]}}
+            for i in resolved_skus
+        ]
+        batch_raw = self._run_batch(calls)
+        # Runner returns the unwrapped single result for one call, a list for several.
+        batch = batch_raw if isinstance(batch_raw, list) else [{"name": "get_product_details", "result": batch_raw}]
+        items = []
+        for sku, call in zip(resolved_skus, batch):
+            detail = call.get("result", {}) if isinstance(call, dict) else {}
+            if not isinstance(detail, dict) or not detail.get("productId"):
+                raise RuntimeError(f"couldn't resolve product details for {sku.get('sku_name', sku.get('sku_id'))}")
+            items.append(
+                {
+                    **sku,
+                    "product_id": detail["productId"],
+                    "store_product_id": detail.get("storeProductId"),
+                }
+            )
+        return items
 
     async def view_cart(self) -> dict:
         """View current cart contents and totals."""
@@ -147,23 +191,26 @@ class ZeptoService:
             "check_payment_status", {"orderId": order_id, "poll": False}
         )
 
-    async def build_cart_batch(
-        self, address_id: str, items: list[dict]
-    ) -> list[dict]:
-        """Build a full cart in one batch: select address + add items + view cart."""
-        calls = [{"name": "select_saved_address", "arguments": {"addressId": address_id}}]
-        for item in items:
-            calls.append(
-                {
-                    "name": "update_cart",
-                    "arguments": {
-                        "productId": item["sku_id"],
-                        "quantity": item.get("quantity", 1),
-                    },
-                }
-            )
-        calls.append({"name": "view_cart", "arguments": {}})
-        calls.append({"name": "get_payment_methods", "arguments": {}})
+    async def build_cart_batch(self, address_id: str, items: list[dict]) -> list[dict]:
+        """Select the address, then set the whole cart in one `update_cart`
+        call, then view it and check payment methods.
+
+        `items` must already carry product_id/store_product_id — call
+        `resolve_cart_items` first (get_product_details doesn't need an
+        address, so that step runs independently before this one).
+        """
+        calls = [
+            {"name": "select_saved_address", "arguments": {"addressId": address_id}},
+            {
+                "name": "update_cart",
+                "arguments": {
+                    "deviceId": "cookcart-agent",
+                    "cartItems": [self._cart_item_args(i) for i in items],
+                },
+            },
+            {"name": "view_cart", "arguments": {}},
+            {"name": "get_payment_methods", "arguments": {}},
+        ]
         return self._run_batch(calls)
 
     def _run_mcp(self, tool_name: str, args: dict) -> dict | list:
