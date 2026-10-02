@@ -137,38 +137,33 @@ export async function comparePrices(
   });
 }
 
-// ===== Checkout =====
-export async function checkPravaStatus() {
-  return fetchAPI<{ status: string; raw: string }>(
-    "/api/checkout/prava-status"
+// ===== Agent runs (state machine) =====
+export async function agentRun(goal: string, userId?: string) {
+  return fetchAPI<{ session_id: string; state: string; reused: boolean }>(
+    "/api/agent/run",
+    {
+      method: "POST",
+      body: JSON.stringify({ goal, ...(userId && { user_id: userId }) }),
+    }
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function initiateCheckout(data: {
-  platform: string;
-  cart_items: any[];
-  total_amount: number;
-  source_recipe: string;
-  skipped_items?: any[];
-  user_id?: string;
-}) {
-  return fetchAPI<{
-    order_id: string;
-    prava_payment_url: string | null;
-    session_id: string | null;
-    status: string;
-    message: string;
-  }>("/api/checkout/initiate", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
+export async function agentApprove(sessionId: string, approve: boolean) {
+  return fetchAPI<{ session_id: string; approval_status: string }>(
+    "/api/agent/approve",
+    {
+      method: "POST",
+      body: JSON.stringify({ session_id: sessionId, approve }),
+    }
+  );
 }
 
-export async function completeCheckout(orderId: string) {
-  return fetchAPI(`/api/checkout/complete/${orderId}`, {
-    method: "POST",
-  });
+export async function getAgentSession(sessionId: string) {
+  return fetchAPI<Record<string, any>>(`/api/agent/session/${sessionId}`);
+}
+
+export function agentStreamUrl(sessionId: string) {
+  return `${API_BASE}/api/agent/stream/${sessionId}`;
 }
 
 export async function getOrder(orderId: string) {

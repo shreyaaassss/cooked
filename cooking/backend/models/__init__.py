@@ -3,3 +3,4 @@ from .user import User
 from .pantry import PantryStaple
 from .mandate import SpendMandate
 from .order import Order
+from .agent_session import AgentSession

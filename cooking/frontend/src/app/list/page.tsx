@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { comparePrices, initiateCheckout } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { agentRun, comparePrices } from "@/lib/api";
 
 /* ── Types ── */
 
@@ -96,6 +97,7 @@ function saveSavedLists(lists: SavedList[]) {
 /* ── Main component ── */
 
 export default function ListPage() {
+  const router = useRouter();
   const [items, setItems] = useState<GroceryItem[]>([]);
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -282,23 +284,17 @@ export default function ListPage() {
   }
 
   async function handleCheckout() {
-    if (!comparison?.recommended) return;
+    const unchecked = items.filter((i) => !i.checked);
+    if (unchecked.length === 0) return;
     setCheckoutLoading(true);
     try {
-      const rec = comparison.recommended;
-      const allItems = rec.strategy === "split"
-        ? [...(rec.zepto_items || []), ...(rec.swiggy_items || [])]
-        : rec.items || [];
-      await initiateCheckout({
-        platform: rec.platform || rec.platforms?.[0] || "zepto",
-        cart_items: allItems,
-        total_amount: rec.total || 0,
-        source_recipe: "Grocery list order",
-      });
-      alert("Order placed successfully!");
+      const goal =
+        "Order these groceries: " +
+        unchecked.map((i) => `${i.quantity} ${i.unit} ${i.name}`).join(", ");
+      const { session_id } = await agentRun(goal);
+      router.push(`/agent?session=${session_id}`);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Checkout failed");
-    } finally {
       setCheckoutLoading(false);
     }
   }

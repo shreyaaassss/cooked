@@ -146,7 +146,7 @@ export default function ConfirmationCard({
                 Processing...
               </>
             ) : (
-              <>Pay with Prava ₹{recommendation.total.toFixed(0)}</>
+              <>Order with the agent · ₹{recommendation.total.toFixed(0)}</>
             )}
           </button>
         </div>

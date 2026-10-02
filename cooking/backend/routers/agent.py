@@ -1,8 +1,15 @@
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+import asyncio
+import json
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from backend.models.database import get_db
+from backend.models.agent_session import AgentSession
+from backend.models.database import SessionLocal, get_db
+from backend.services import orchestrator
 from backend.services.agent_service import chat
 from backend.services.cart_optimizer import CartOptimizer, PlatformCart
 from backend.services.pantry_service import apply_pantry_diff
@@ -122,3 +129,130 @@ async def agent_chat(req: ChatRequest, db: Session = Depends(get_db)):
         }
 
     return result
+
+
+# ── Autonomous agent (state machine) ─────────────────────────────────
+
+
+class RunRequest(BaseModel):
+    goal: str = Field(..., min_length=2, max_length=500)
+    user_id: str = DEMO_USER_ID
+
+
+class ApproveRequest(BaseModel):
+    session_id: str
+    approve: bool = True
+
+
+def _session_view(row: AgentSession) -> dict:
+    return {
+        "session_id": str(row.id),
+        "goal": row.goal,
+        "state": row.state,
+        "status": row.status,
+        "intent": row.intent,
+        "plan": row.plan,
+        "pantry": row.pantry,
+        "cart": row.cart,
+        "alternatives": (row.ranked_carts or [])[1:] if row.ranked_carts else [],
+        "total": float(row.total) if row.total is not None else None,
+        "policy": row.policy,
+        "approval_status": row.approval_status,
+        "order_id": str(row.order_id) if row.order_id else None,
+        "errors": row.errors or [],
+        "events": row.events or [],
+    }
+
+
+@router.post("/run")
+async def agent_run(req: RunRequest, db: Session = Depends(get_db)):
+    """Start an agent run from one natural-language goal. Returns immediately;
+    follow progress on GET /stream/{session_id}."""
+    try:
+        user_id = orchestrator._sid(req.user_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid user id")
+
+    # Idempotency: a double-submit of the same goal returns the live session.
+    recent = (
+        db.query(AgentSession)
+        .filter(
+            AgentSession.user_id == user_id,
+            AgentSession.goal == orchestrator.sanitize_text(req.goal, 500),
+            AgentSession.status.in_(("running", "awaiting_approval")),
+            AgentSession.created_at > datetime.now(timezone.utc) - timedelta(minutes=2),
+        )
+        .first()
+    )
+    if recent:
+        return {"session_id": str(recent.id), "state": recent.state, "reused": True}
+
+    row = orchestrator.create_session(db, str(user_id), req.goal)
+    orchestrator.spawn(row.id)
+    return {"session_id": str(row.id), "state": row.state, "reused": False}
+
+
+@router.get("/session/{session_id}")
+async def agent_session(session_id: str, db: Session = Depends(get_db)):
+    try:
+        row = db.get(AgentSession, orchestrator._sid(session_id))
+    except ValueError:
+        raise HTTPException(400, "Invalid session id")
+    if not row:
+        raise HTTPException(404, "Session not found")
+    return _session_view(row)
+
+
+@router.get("/stream/{session_id}")
+async def agent_stream(session_id: str, request: Request):
+    """Server-Sent Events: replays the timeline so far, then streams new
+    events until the run reaches a terminal state."""
+    try:
+        sid = orchestrator._sid(session_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid session id")
+    with SessionLocal() as db:
+        if db.get(AgentSession, sid) is None:
+            raise HTTPException(404, "Session not found")
+
+    async def gen():
+        sent, idle = 0, 0
+        while True:
+            if await request.is_disconnected():
+                return
+            with SessionLocal() as db:
+                row = db.get(AgentSession, sid)
+                events = list(row.events or [])
+                status, view = row.status, _session_view(row)
+            for ev in events[sent:]:
+                yield f"id: {ev['seq']}\nevent: {ev['type']}\ndata: {json.dumps(ev)}\n\n"
+                sent, idle = ev["seq"] + 1, 0
+            if status in ("completed", "failed", "cancelled"):
+                view.pop("events", None)
+                yield f"event: end\ndata: {json.dumps(view)}\n\n"
+                return
+            idle += 1
+            if idle % 30 == 0:  # ~15s keep-alive while paused for approval
+                yield ": keep-alive\n\n"
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
+@router.post("/approve")
+async def agent_approve(req: ApproveRequest, db: Session = Depends(get_db)):
+    """Record the human's decision and resume the same session."""
+    try:
+        row = orchestrator.record_decision(db, req.session_id, req.approve)
+    except LookupError:
+        raise HTTPException(404, "Session not found")
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    except PermissionError as e:
+        raise HTTPException(403, f"Blocked by spend policy: {e}")
+    orchestrator.spawn(row.id)
+    return {"session_id": str(row.id), "approval_status": row.approval_status}

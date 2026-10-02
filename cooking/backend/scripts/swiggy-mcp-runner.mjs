@@ -205,7 +205,7 @@ class McpClient {
   constructor(endpoint) {
     const npx = resolveExecutable("npx", "SWIGGY_NPX_PATH");
     const npxBin = dirname(npx);
-    this.child = spawn("npx", ["--yes", "mcp-remote", endpoint], {
+    this.child = spawn("npx", ["--yes", "mcp-remote@0.1.37", endpoint], {
       stdio: ["pipe", "pipe", "pipe"],
       shell: true,
       env: {

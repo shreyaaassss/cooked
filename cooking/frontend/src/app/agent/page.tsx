@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { agentChat, initiateCheckout } from "@/lib/api";
+import { agentChat, agentRun } from "@/lib/api";
 
 interface ChatMsg {
   role: "user" | "assistant";
@@ -64,31 +64,26 @@ export default function AgentPage() {
     if (!comparison?.recommended) return;
     setCheckoutLoading(true);
     try {
-      const rec = comparison.recommended;
-      const allItems = getAllItems(rec);
-      const result = await initiateCheckout({
-        platform: rec.platform || rec.platforms?.[0] || "zepto",
-        cart_items: allItems,
-        total_amount: rec.total || 0,
-        source_recipe: "Agent order",
-        skipped_items: comparison.skipped || [],
-      });
-      const checkoutMsg: ChatMsg = {
-        role: "assistant",
-        content: result.prava_payment_url
-          ? `Order created! Approve payment of Rs${rec.total?.toFixed(0)} on Prava:\n${result.prava_payment_url}`
-          : `Order created (ID: ${result.order_id}). ${result.message}`,
-      };
-      setMessages((prev) => [...prev, checkoutMsg]);
+      const items = getAllItems(comparison.recommended);
+      const goal =
+        "Order these groceries: " +
+        items.map((i: any) => i.needed ? `${i.needed} ${i.ingredient}` : i.ingredient).join(", ");
+      const { session_id } = await agentRun(goal);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `Started agent run ${session_id}. It will re-check your pantry, compare Zepto and Swiggy, and ask for your approval before buying anything.`,
+        },
+      ]);
     } catch (err) {
-      const errMsg: ChatMsg = {
-        role: "assistant",
-        content:
-          err instanceof Error
-            ? `Checkout failed: ${err.message}`
-            : "Checkout failed. Please try again.",
-      };
-      setMessages((prev) => [...prev, errMsg]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: err instanceof Error ? `Checkout failed: ${err.message}` : "Checkout failed. Please try again.",
+        },
+      ]);
     } finally {
       setCheckoutLoading(false);
     }

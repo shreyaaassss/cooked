@@ -1,34 +1,31 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import ChatInput from "@/components/ChatInput";
 import RecipeCard from "@/components/RecipeCard";
 import ComparisonTable from "@/components/ComparisonTable";
 import ConfirmationCard from "@/components/ConfirmationCard";
-import PravaApproval from "@/components/PravaApproval";
-import OrderStatus from "@/components/OrderStatus";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import {
   comparePrices,
-  completeCheckout,
+  agentRun,
   decomposeRecipe,
-  initiateCheckout,
 } from "@/lib/api";
 import type {
   AppStep,
-  CheckoutInitResult,
   CompareResult,
   RecipeResult,
   SkippedItem,
 } from "@/lib/types";
 
 export default function Home() {
+  const router = useRouter();
   const [step, setStep] = useState<AppStep>("input");
   const [dish, setDish] = useState("");
   const [servings, setServings] = useState(4);
   const [recipe, setRecipe] = useState<RecipeResult | null>(null);
   const [comparison, setComparison] = useState<CompareResult | null>(null);
-  const [checkout, setCheckout] = useState<CheckoutInitResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
@@ -54,40 +51,20 @@ export default function Home() {
     }
   }
 
+  // Ordering is handled by the agent: it re-checks the pantry, searches both
+  // stores, enforces spend limits and asks for approval before any purchase.
   async function handleConfirmCheckout() {
     if (!comparison?.recommended) return;
     setCheckoutLoading(true);
-
     try {
-      const result = await initiateCheckout({
-        platform: comparison.recommended.platform || "zepto",
-        cart_items: comparison.recommended.items,
-        total_amount: comparison.recommended.total,
-        source_recipe: `${dish}, serves ${servings}`,
-        skipped_items: comparison.skipped,
-      });
-      setCheckout(result);
-      setStep("prava_approval");
+      const { session_id } = await agentRun(
+        `Order the ingredients for ${dish} for ${servings} people`
+      );
+      router.push(`/agent?session=${session_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Checkout failed");
       setStep("error");
-    } finally {
       setCheckoutLoading(false);
-    }
-  }
-
-  async function handlePaymentComplete() {
-    if (!checkout?.order_id) return;
-    setStep("completing");
-
-    try {
-      await completeCheckout(checkout.order_id);
-      setStep("done");
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Payment completion failed"
-      );
-      setStep("error");
     }
   }
 
@@ -97,7 +74,6 @@ export default function Home() {
     setServings(4);
     setRecipe(null);
     setComparison(null);
-    setCheckout(null);
     setError(null);
   }
 
@@ -117,7 +93,7 @@ export default function Home() {
       )}
 
       {/* Chat input */}
-      {step !== "done" && step !== "completing" && (
+      {(
         <ChatInput
           onSubmit={handleDishSubmit}
           disabled={step !== "input" && step !== "error"}
@@ -146,7 +122,7 @@ export default function Home() {
 
       {/* Comparison table */}
       {comparison &&
-        (step === "comparison" || step === "confirmation" || step === "prava_approval") && (
+        (step === "comparison" || step === "confirmation") && (
           <ComparisonTable data={comparison} />
         )}
 
@@ -160,36 +136,6 @@ export default function Home() {
           onConfirm={handleConfirmCheckout}
           onCancel={handleReset}
           loading={checkoutLoading}
-        />
-      )}
-
-      {/* Prava approval */}
-      {checkout && step === "prava_approval" && (
-        <PravaApproval
-          paymentUrl={checkout.prava_payment_url || "#"}
-          amount={comparison?.recommended?.total || 0}
-          platform={comparison?.recommended?.platform || "zepto"}
-          onComplete={handlePaymentComplete}
-        />
-      )}
-
-      {/* Completing checkout */}
-      {step === "completing" && (
-        <LoadingSpinner message="Completing checkout with your Prava credentials..." />
-      )}
-
-      {/* Order complete */}
-      {step === "done" && comparison && checkout && (
-        <OrderStatus
-          orderId={checkout.order_id}
-          dish={dish}
-          platform={comparison.recommended.platform || "zepto"}
-          items={comparison.recommended.items}
-          skipped={comparison.skipped as SkippedItem[]}
-          total={comparison.recommended.total}
-          status="paid"
-          eta={comparison.recommended.eta}
-          onNewOrder={handleReset}
         />
       )}
 

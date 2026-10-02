@@ -8,7 +8,6 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     email TEXT UNIQUE,
-    prava_account_id TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -45,13 +44,40 @@ CREATE TABLE IF NOT EXISTS orders (
     total_amount DECIMAL(10,2),
     delivery_fee DECIMAL(10,2),
     status TEXT CHECK (status IN (
-        'pending_approval', 'approved', 'payment_pending',
-        'paid', 'failed', 'cancelled'
+        'pending_approval', 'approved', 'awaiting_user_payment',
+        'payment_pending', 'paid', 'failed', 'cancelled'
     )) DEFAULT 'pending_approval',
-    prava_session_id TEXT,
+    agent_session_id UUID,
+    payment_status TEXT DEFAULT 'not_started',
+    order_status TEXT DEFAULT 'not_placed',
+    payment_url TEXT,
+    payment_ref TEXT,
     platform_order_id TEXT,
+    platform_orders JSONB,
+    failure_state JSONB,
     idempotency_key TEXT UNIQUE,
     eta_minutes INT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Agent sessions (persistent agent state; the app creates this via SQLAlchemy create_all)
+CREATE TABLE IF NOT EXISTS agent_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    goal TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'PARSE',
+    status TEXT NOT NULL DEFAULT 'running',
+    intent JSONB, plan JSONB, pantry JSONB, comparison JSONB,
+    ranked_carts JSONB, cart JSONB,
+    total DECIMAL(10,2),
+    policy JSONB,
+    approval_status TEXT DEFAULT 'not_required',
+    recovery JSONB,
+    attempts JSONB DEFAULT '{}',
+    order_id UUID,
+    errors JSONB DEFAULT '[]',
+    events JSONB DEFAULT '[]',
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );

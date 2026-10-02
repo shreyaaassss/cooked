@@ -63,15 +63,6 @@ export interface CompareResult {
   errors?: string[];
 }
 
-// ===== Checkout Types =====
-export interface CheckoutInitResult {
-  order_id: string;
-  prava_payment_url: string | null;
-  session_id: string | null;
-  status: string;
-  message: string;
-}
-
 export interface OrderStatus {
   order_id: string;
   source_recipe: string;
@@ -80,6 +71,8 @@ export interface OrderStatus {
   skipped: SkippedItem[];
   total: number | null;
   status: string;
+  payment_status?: string;
+  order_status?: string;
   eta_minutes: number | null;
   platform_order_id: string | null;
   created_at: string | null;
@@ -92,9 +85,6 @@ export type AppStep =
   | "comparing"
   | "comparison"
   | "confirmation"
-  | "prava_approval"
-  | "completing"
-  | "done"
   | "error";
 
 export interface AppState {
@@ -103,7 +93,6 @@ export interface AppState {
   servings: number;
   recipe: RecipeResult | null;
   comparison: CompareResult | null;
-  checkout: CheckoutInitResult | null;
   order: OrderStatus | null;
   error: string | null;
 }

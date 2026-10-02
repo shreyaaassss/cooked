@@ -58,27 +58,21 @@ export default function SettingsPage() {
         </div>
 
         <p className="text-xs text-gray-400 mt-3">
-          Orders above the auto-approve threshold will require explicit Passkey
-          approval via Prava. Orders above the max spend cap will be blocked
-          entirely.
+          Orders above the auto-approve threshold need your explicit approval
+          before the agent buys anything. Orders above the max spend cap are
+          blocked entirely. Limits are enforced on the server.
         </p>
       </div>
 
-      {/* Prava status */}
+      {/* Payment */}
       <div className="bg-white border border-gray-200 rounded-2xl shadow-md p-6">
-        <h3 className="text-lg font-bold text-gray-800 mb-1">
-          Prava Connection
-        </h3>
-        <p className="text-sm text-gray-400 mb-4">
-          Prava handles payment securely — your card details never touch
-          CookCart.
+        <h3 className="text-lg font-bold text-gray-800 mb-1">Payment</h3>
+        <p className="text-sm text-gray-400">
+          CookCart never handles your card or UPI details. After you approve an
+          order, payment is completed on the store&apos;s own checkout (Zepto
+          gives a secure payment link). CookCart only marks an order successful
+          once the store confirms it.
         </p>
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-          <span className="text-sm text-gray-600">
-            Connected — payments will use your linked Prava wallet
-          </span>
-        </div>
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ from backend.routers import address, agent, checkout, compare, orders, pantry, r
 
 app = FastAPI(
     title="CookCart API",
-    description="Recipe-to-Checkout Grocery Agent powered by Prava Payments",
+    description="Autonomous grocery agent (Zepto + Swiggy Instamart)",
     version="1.0.0",
 )
 
